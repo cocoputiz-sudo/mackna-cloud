@@ -1,8 +1,8 @@
-name: MackNa Cloud MVP
+name: MackNa Cloud PR2 - Node 01
 
 on:
   push:
-    branches: [main, feat/mvp-node01-observability-20261014]
+    branches: [main, feat/mvp-node01-observability-20261014, feat/pr2-claude-integrated-controller-20261014]
   pull_request:
   workflow_dispatch:
 
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  test-and-build:
+  verify:
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -21,11 +21,14 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.mod
-      - name: Unit tests
-        run: go test -v -race ./...
-      - name: Vet
+      - name: Go tests with race detector
+        run: go test -race -count=1 ./...
+      - name: Go vet
         run: go vet ./...
-      - name: Compile Linux ARM64 for BTV11
+      - name: Bash syntax checks
+        working-directory: .
+        run: bash -n scripts/*.sh
+      - name: Cross-compile controller and gate for ARM64
         env:
           GOOS: linux
           GOARCH: arm64
@@ -33,10 +36,16 @@ jobs:
         run: |
           mkdir -p ../dist
           go build -trimpath -ldflags="-s -w" -o ../dist/mackna-agent-linux-arm64 .
-          file ../dist/mackna-agent-linux-arm64
-      - uses: actions/upload-artifact@v4
+          go build -trimpath -ldflags="-s -w" -o ../dist/mackna-gate-linux-arm64 ./cmd/gate
+          file ../dist/mackna-*-linux-arm64
+      - name: Upload binaries and service scripts
+        uses: actions/upload-artifact@v4
         with:
-          name: mackna-agent-linux-arm64
-          path: dist/mackna-agent-linux-arm64
-          if-no-files-found: error
+          name: mackna-pr2-node01-arm64
+          path: |
+            dist/*
+            deploy/systemd/mackna-agent.service
+            deploy/systemd/mackna-gate.service
+            scripts/install-node.sh
           retention-days: 14
+          if-no-files-found: error
