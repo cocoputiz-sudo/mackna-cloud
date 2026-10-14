@@ -1,0 +1,12 @@
+# Local secrets and generated artifacts
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.db
+*.sqlite
+*.sqlite3
+dist/
+*.log

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="20">
+<title>MackNa Cloud · Node 01</title>
+<style>
+:root { color-scheme: dark; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background:#090e16; color:#e7edf6 }
+* {box-sizing:border-box} body{margin:0;padding:24px;max-width:1120px;margin-inline:auto}
+header{display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid #293347;padding-bottom:18px}
+h1{font-size:1.8rem;letter-spacing:-.03em;margin:0} h2{font-size:1.1rem;margin:0 0 16px}
+small,.muted{color:#9cabc0}.tag{display:inline-block;padding:5px 10px;border:1px solid #384960;border-radius:999px;color:#b8e5d2;font-size:.8rem}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:24px 0}
+.card{background:#131e2d;border:1px solid #28354a;border-radius:14px;padding:20px;min-width:0}
+.value{font-size:1.65rem;font-weight:750;margin-top:8px;word-break:break-word}
+.alert{color:#ffb9a4} .good{color:#91eac3}
+table{border-collapse:collapse;width:100%;text-align:left} th,td{padding:12px;border-bottom:1px solid #303e53;overflow-wrap:anywhere}
+th{color:#aebdd0;font-size:.78rem;text-transform:uppercase;letter-spacing:.06em}
+table tbody tr:last-child td{border:0}
+footer{font-size:.82rem;color:#9cabc0;margin-top:24px}
+@media(max-width:720px){body{padding:14px} .grid{grid-template-columns:1fr}header{align-items:start;flex-direction:column}.card{padding:16px}table{font-size:.82rem}}
+</style>
+</head>
+<body>
+<header><div><h1>☁ MackNa Cloud</h1><div class="muted">Painel de observabilidade · {{.Node}}</div></div><span class="tag">MVP {{.Version}} · SOMENTE LEITURA</span></header>
+{{if .SystemOK}}
+<div class="grid">
+<section class="card"><small>Servidor</small><div class="value">{{.Info.Hostname}}</div><div class="muted">{{.Info.Architecture}}</div></section>
+<section class="card"><small>Memória disponível</small><div class="value">{{human .Info.MemoryAvailable}}</div><div class="muted">Total: {{human .Info.MemoryTotal}}</div></section>
+<section class="card"><small>Armazenamento livre</small><div class="value">{{human .Info.DiskAvailable}}</div><div class="muted">Total: {{human .Info.DiskTotal}}</div></section>
+<section class="card"><small>Temperatura máxima</small><div class="value">{{temperature .Info.TemperatureC}}</div><div class="muted">Sensores térmicos do Linux</div></section>
+<section class="card"><small>Tempo ligado</small><div class="value">{{uptime .Info.UptimeSeconds}}</div><div class="muted">Uptime do kernel</div></section>
+<section class="card"><small>Carga média (1 min)</small><div class="value">{{printf "%.2f" .Info.LoadAverage1m}}</div><div class="muted">Load average, não porcentagem de CPU</div></section>
+<section class="card"><small>API do agente</small><div class="value good">Ativa</div><div class="muted">Acesso restrito a túnel SSH</div></section>
+</div>
+{{else}}<p class="alert">Não foi possível consultar as métricas do host.</p>{{end}}
+<section class="card">
+<h2>Contêineres Docker</h2>
+{{if .DockerOK}}
+{{if .Containers}}
+<div style="overflow-x:auto"><table><thead><tr><th>Serviço</th><th>Imagem</th><th>Estado</th><th>Status Docker</th></tr></thead><tbody>
+{{range .Containers}}<tr><td><strong>{{.Name}}</strong></td><td>{{.Image}}</td><td>{{.State}}</td><td>{{.Status}}</td></tr>{{end}}
+</tbody></table></div>
+{{else}}<p class="muted">Nenhum contêiner encontrado.</p>{{end}}
+{{else}}<p class="alert">Inventário Docker indisponível. Verifique as permissões do agente no host.</p>{{end}}
+</section>
+<footer>Atualização a cada 20 segundos · Nenhuma ação de escrita ou reinicialização está disponível nesta versão. Não exponha esta interface diretamente à internet.</footer>
+</body></html>
