@@ -1,222 +1,279 @@
 package main
 
 import (
-    "bufio"
-    "context"
-    "crypto/subtle"
-    "embed"
-    "encoding/json"
-    "errors"
-    "fmt"
-    "html/template"
-    "log"
-    "net/http"
-    "os"
-    "os/exec"
-    "runtime"
-    "strconv"
-    "strings"
-    "syscall"
-    "time"
+ "bufio"
+ "context"
+ "crypto/subtle"
+ "embed"
+ "encoding/json"
+ "errors"
+ "fmt"
+ "html/template"
+ "io"
+ "log"
+ "net"
+ "net/http"
+ "net/url"
+ "os"
+ "runtime"
+ "strconv"
+ "strings"
+ "syscall"
+ "time"
+
+ "github.com/cocoputiz-sudo/mackna-cloud/backend/internal/auth"
+ "github.com/cocoputiz-sudo/mackna-cloud/backend/internal/gate"
 )
 
 //go:embed dashboard.html
 var dashboardHTML embed.FS
 
-const version = "0.1.0"
-const listenAddress = "127.0.0.1:8090" // Never expose HTTP Basic authentication directly to the LAN.
-var page = template.Must(template.New("dashboard.html").Funcs(template.FuncMap{"human": humanBytes}).ParseFS(dashboardHTML, "dashboard.html"))
+const version = "0.2.0"
+const listenAddress = "127.0.0.1:8090"
+var page = template.Must(template.New("dashboard.html").Funcs(template.FuncMap{"human": humanBytes}).ParseFS(dashboardHTML,"dashboard.html"))
+func humanBytes(n uint64)string{
+ const k=1024
+ if n<k{return fmt.Sprintf("%d B",n)}
+ v:=float64(n)
+ for _,unit:=range []string{"KiB","MiB","GiB","TiB"}{
+  v/=k
+  if v<k{return fmt.Sprintf("%.1f %s",v,unit)}
+ }
+ return fmt.Sprintf("%.1f PiB",v/k)
+}
 
-func humanBytes(n uint64) string {
-    const unit = 1024
-    if n < unit { return fmt.Sprintf("%d B", n) }
-    v := float64(n)
-    suffix := []string{"KiB", "MiB", "GiB", "TiB"}
-    for _, unitName := range suffix {
-        v /= unit
-        if v < unit { return fmt.Sprintf("%.1f %s", v, unitName) }
+type systemInfo struct{
+ Hostname string `json:"hostname"`
+ Architecture string `json:"architecture"`
+ UptimeSeconds float64 `json:"uptime_seconds"`
+ LoadAverage1m float64 `json:"load_average_1m"`
+ MemoryTotal uint64 `json:"memory_total_bytes"`
+ MemoryAvailable uint64 `json:"memory_available_bytes"`
+ DiskTotal uint64 `json:"disk_total_bytes"`
+ DiskAvailable uint64 `json:"disk_available_bytes"`
+ TemperatureC *float64 `json:"temperature_c,omitempty"`
+}
+type containerInfo = gate.Container
+
+func readSystem()(systemInfo,error){
+ info:=systemInfo{Architecture:"linux/"+runtime.GOARCH}
+ var err error
+ info.Hostname,err=os.Hostname();if err!=nil{return info,err}
+ b,err:=os.ReadFile("/proc/uptime");if err!=nil{return info,err}
+ fields:=strings.Fields(string(b));if len(fields)<1{return info,errors.New("malformed uptime")}
+ info.UptimeSeconds,err=strconv.ParseFloat(fields[0],64);if err!=nil{return info,err}
+ b,err=os.ReadFile("/proc/loadavg");if err!=nil{return info,err}
+ fields=strings.Fields(string(b));if len(fields)<1{return info,errors.New("malformed loadavg")}
+ info.LoadAverage1m,err=strconv.ParseFloat(fields[0],64);if err!=nil{return info,err}
+ f,err:=os.Open("/proc/meminfo");if err!=nil{return info,err}
+ defer f.Close()
+ var total,avail bool
+ sc:=bufio.NewScanner(f)
+ for sc.Scan(){
+  fields:=strings.Fields(sc.Text());if len(fields)<2{continue}
+  if fields[0]!="MemTotal:"&&fields[0]!="MemAvailable:"{continue}
+  n,e:=strconv.ParseUint(fields[1],10,64);if e!=nil{return info,e}
+  if fields[0]=="MemTotal:"{info.MemoryTotal=n*1024;total=true}
+  if fields[0]=="MemAvailable:"{info.MemoryAvailable=n*1024;avail=true}
+ }
+ if err:=sc.Err();err!=nil{return info,err}
+ if !total||!avail{return info,errors.New("meminfo metrics missing")}
+ var disk syscall.Statfs_t
+ if err=syscall.Statfs("/",&disk);err!=nil{return info,err}
+ info.DiskTotal=disk.Blocks*uint64(disk.Bsize)
+ info.DiskAvailable=disk.Bavail*uint64(disk.Bsize)
+ for i:=0;i<20;i++{
+  p:=fmt.Sprintf("/sys/class/thermal/thermal_zone%d/temp",i)
+  b,e:=os.ReadFile(p);if e!=nil{continue}
+  milli,e:=strconv.ParseFloat(strings.TrimSpace(string(b)),64)
+  if e!=nil||milli<=0||milli>150000{continue}
+  c:=milli/1000
+  if info.TemperatureC==nil||c>*info.TemperatureC{info.TemperatureC=&c}
+ }
+ return info,nil
+}
+
+type controller struct {
+ Tokens *auth.Store
+ HTTP *http.Client
+ System func()(systemInfo,error)
+ Containers func(context.Context)([]containerInfo,error)
+}
+
+func gateClient(socket string)*http.Client{
+ transport:=&http.Transport{
+  DialContext:func(ctx context.Context,_,_ string)(net.Conn,error){
+   return (&net.Dialer{Timeout:3*time.Second}).DialContext(ctx,"unix",socket)
+  },
+  MaxIdleConns:4,ResponseHeaderTimeout:10*time.Second,
+ }
+ return &http.Client{Transport:transport,Timeout:15*time.Second,CheckRedirect:func(*http.Request,[]*http.Request)error{return http.ErrUseLastResponse}}
+}
+func newController(tokenStore *auth.Store, socket string)*controller{
+ c:=&controller{Tokens:tokenStore,HTTP:gateClient(socket),System:readSystem}
+ c.Containers=c.listContainers
+ return c
+}
+func (c *controller) call(ctx context.Context, path string)([]byte,int,error){
+ req,err:=http.NewRequestWithContext(ctx,"GET","http://gate"+path,nil)
+ if err!=nil{return nil,0,err}
+ res,err:=c.HTTP.Do(req);if err!=nil{return nil,0,err}
+ defer res.Body.Close()
+ // Upper bound on all read responses; see gate for smaller per-method limits.
+ var b strings.Builder
+ if _,err=ioCopyMax(&b,res.Body,4<<20);err!=nil{return nil,res.StatusCode,err}
+ return []byte(b.String()),res.StatusCode,nil
+}
+func ioCopyMax(dst *strings.Builder,src io.Reader,max int64)(int64,error){
+ n,err:=io.Copy(dst,io.LimitReader(src,max+1))
+ if err!=nil{return n,err}
+ if n>max{return n,errors.New("response too large")}
+ return n,nil
+}
+func (c *controller) listContainers(ctx context.Context)([]containerInfo,error){
+ b,status,err:=c.call(ctx,"/containers/json?all=1")
+ if err!=nil{return nil,err}
+ if status!=200{return nil,errors.New("gate unavailable")}
+ var records []containerInfo
+ if err=json.Unmarshal(b,&records);err!=nil{return nil,err}
+ return records,nil
+}
+func jsonResponse(w http.ResponseWriter,status int,v any){
+ w.Header().Set("Content-Type","application/json; charset=utf-8")
+ w.WriteHeader(status)
+ _=json.NewEncoder(w).Encode(v)
+}
+func (c *controller) authorized(r *http.Request,scope string)(auth.Token,bool){
+ hdr:=r.Header.Get("Authorization")
+ var presented string
+ if strings.HasPrefix(hdr,"Bearer "){presented=strings.TrimSpace(strings.TrimPrefix(hdr,"Bearer "))}
+ if u,p,ok:=r.BasicAuth();ok&&subtle.ConstantTimeCompare([]byte(u),[]byte("admin"))==1{presented=p}
+ tok,ok:=c.Tokens.Authenticate(presented)
+ return tok,ok&&tok.Has(scope)
+}
+func secureHeaders(w http.ResponseWriter){
+ h:=w.Header()
+ h.Set("Cache-Control","no-store")
+ h.Set("X-Content-Type-Options","nosniff")
+ h.Set("X-Frame-Options","DENY")
+ h.Set("Referrer-Policy","no-referrer")
+ h.Set("Content-Security-Policy","default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
+}
+func (c *controller) ServeHTTP(w http.ResponseWriter,r *http.Request){
+ secureHeaders(w)
+ if r.Method!="GET"{w.Header().Set("Allow","GET");jsonResponse(w,405,map[string]string{"error":"method_not_allowed"});return}
+ if r.URL.Path=="/api/v1/health"{
+  ctx,cancel:=context.WithTimeout(r.Context(),3*time.Second);defer cancel()
+  _,status,err:=c.call(ctx,"/_ping")
+  healthy:=err==nil&&status==200
+  if healthy{jsonResponse(w,200,map[string]any{"ok":true,"docker":true,"version":version})}else{jsonResponse(w,503,map[string]any{"ok":false,"docker":false,"version":version})}
+  return
+ }
+ scope:=auth.Read
+ if strings.HasSuffix(r.URL.Path,"/logs"){scope=auth.Logs}
+ if r.URL.Path=="/api/v1/audit"{scope=auth.Admin}
+ tok,ok:=c.authorized(r,scope)
+ if !ok{
+  if r.URL.Path=="/"{w.Header().Set("WWW-Authenticate",`Basic realm="MackNa Cloud", charset="UTF-8"`)}
+  jsonResponse(w,401,map[string]string{"error":"unauthorized"})
+  log.Printf("AUDIT %s",auditLine("auth_denied",r,"",401))
+  return
+ }
+ log.Printf("AUDIT %s",auditLine("api_access",r,tok.ID,200))
+ switch r.URL.Path{
+ case "/api/v1/system","/api/v1/node":
+  v,err:=c.System();if err!=nil{jsonResponse(w,503,map[string]string{"error":"metrics_unavailable"});return}
+  jsonResponse(w,200,v)
+ case "/api/v1/containers","/api/v1/projects":
+  list,err:=c.Containers(r.Context());if err!=nil{jsonResponse(w,503,map[string]string{"error":"docker_unavailable"});return}
+  if r.URL.Path=="/api/v1/projects"{
+   projectMap:=map[string][]containerInfo{}
+   for _,item:=range list{p:=item.Project;if p==""{p="(standalone)"};projectMap[p]=append(projectMap[p],item)}
+   jsonResponse(w,200,map[string]any{"projects":projectMap})
+  }else{jsonResponse(w,200,list)}
+ case "/":
+  info,errSys:=c.System()
+  containers,errDock:=c.Containers(r.Context())
+  w.Header().Set("Content-Type","text/html; charset=utf-8")
+  if err:=page.Execute(w,struct{
+   Node string;Info systemInfo;SystemOK bool;DockerOK bool;Containers []containerInfo;Version string
+  }{"Node 01",info,errSys==nil,errDock==nil,containers,version});err!=nil{log.Printf("render error: %v",err)}
+ default:
+  const prefix="/api/v1/containers/"
+  if !strings.HasPrefix(r.URL.Path,prefix){jsonResponse(w,404,map[string]string{"error":"not_found"});return}
+  sub:=strings.TrimPrefix(r.URL.Path,prefix)
+  parts:=strings.Split(sub,"/")
+  if len(parts)<1||len(parts)>2||!validContainerName(parts[0]){
+   jsonResponse(w,400,map[string]string{"error":"invalid_container_id"});return
+  }
+  target:="/containers/"+url.PathEscape(parts[0])+"/json"
+  if len(parts)==2 {
+   switch parts[1]{
+   case "stats":target="/containers/"+url.PathEscape(parts[0])+"/stats?stream=false"
+   case "logs":
+    tail:=r.URL.Query().Get("tail");if tail==""{tail="200"}
+    n,err:=strconv.Atoi(tail);if err!=nil||n<1||n>gate.MaxLogTail{jsonResponse(w,400,map[string]string{"error":"invalid_tail"});return}
+    q:=url.Values{"tail":{strconv.Itoa(n)}}
+    if since:=r.URL.Query().Get("since");since!=""{
+     if _,err:=strconv.ParseInt(since,10,64);err!=nil{jsonResponse(w,400,map[string]string{"error":"invalid_since"});return}
+     q.Set("since",since)
     }
-    return fmt.Sprintf("%.1f PiB", v / unit)
+    target="/containers/"+url.PathEscape(parts[0])+"/logs?"+q.Encode()
+   default:jsonResponse(w,404,map[string]string{"error":"not_found"});return
+   }
+  }else if len(r.URL.Query())>0{jsonResponse(w,400,map[string]string{"error":"unexpected_query"});return}
+  b,status,err:=c.call(r.Context(),target)
+  if err!=nil{jsonResponse(w,502,map[string]string{"error":"gate_unavailable"});return}
+  if status!=200{w.Header().Set("Content-Type","application/json");w.WriteHeader(status);_,_=w.Write(b);return}
+  w.Header().Set("Content-Type","application/json")
+  w.WriteHeader(200);_,_=w.Write(b)
+ }
 }
-
-type systemInfo struct {
-    Hostname       string  `json:"hostname"`
-    Architecture   string  `json:"architecture"`
-    UptimeSeconds  float64 `json:"uptime_seconds"`
-    LoadAverage1m  float64 `json:"load_average_1m"`
-    MemoryTotal    uint64  `json:"memory_total_bytes"`
-    MemoryAvailable uint64 `json:"memory_available_bytes"`
-    DiskTotal      uint64  `json:"disk_total_bytes"`
-    DiskAvailable  uint64  `json:"disk_available_bytes"`
+func validContainerName(v string)bool{
+ if len(v)<1||len(v)>128{return false}
+ for i,c:=range v{
+  if c>='a'&&c<='z'||c>='A'&&c<='Z'||c>='0'&&c<='9'{continue}
+  if i>0&&(c=='.'||c=='_'||c=='-'){continue}
+  return false
+ }
+ return true
 }
-
-type containerInfo struct {
-    ID     string `json:"id"`
-    Name   string `json:"name"`
-    Image  string `json:"image"`
-    State  string `json:"state"`
-    Status string `json:"status"`
+func auditLine(event string,r *http.Request,id string,code int)string{
+ b,_:=json.Marshal(map[string]any{"event":event,"tokenId":id,"method":r.Method,"path":r.URL.Path,"status":code,"at":time.Now().UTC().Format(time.RFC3339Nano)})
+ return string(b)
 }
-
-type agent struct {
-    token      string
-    system     func() (systemInfo, error)
-    containers func(context.Context) ([]containerInfo, error)
-}
-
-func readSystem() (systemInfo, error) {
-    info := systemInfo{}
-    hostname, err := os.Hostname()
-    if err != nil { return info, err }
-    info.Hostname = hostname
-    info.Architecture = "linux/" + runtimeArch()
-    uptime, err := os.ReadFile("/proc/uptime")
-    if err != nil { return info, err }
-    uptimeFields := strings.Fields(string(uptime))
-    if len(uptimeFields) < 1 { return info, errors.New("invalid /proc/uptime") }
-    info.UptimeSeconds, err = strconv.ParseFloat(uptimeFields[0], 64)
-    if err != nil { return info, err }
-    load, err := os.ReadFile("/proc/loadavg")
-    if err != nil { return info, err }
-    loadFields := strings.Fields(string(load))
-    if len(loadFields) < 1 { return info, errors.New("invalid /proc/loadavg") }
-    info.LoadAverage1m, err = strconv.ParseFloat(loadFields[0], 64)
-    if err != nil { return info, err }
-    mem, err := os.Open("/proc/meminfo")
-    if err != nil { return info, err }
-    defer mem.Close()
-    scanner := bufio.NewScanner(mem)
-    var totalFound, availableFound bool
-    for scanner.Scan() {
-        fields := strings.Fields(scanner.Text())
-        if len(fields) < 2 { continue }
-        if fields[0] == "MemTotal:" || fields[0] == "MemAvailable:" {
-            value, parseErr := strconv.ParseUint(fields[1], 10, 64)
-            if parseErr != nil { return info, parseErr }
-            if fields[0] == "MemTotal:" { info.MemoryTotal = value * 1024; totalFound = true }
-            if fields[0] == "MemAvailable:" { info.MemoryAvailable = value * 1024; availableFound = true }
-        }
-    }
-    if err := scanner.Err(); err != nil { return info, err }
-    if !totalFound || !availableFound { return info, errors.New("missing memory metrics") }
-    var stat syscall.Statfs_t
-    if err := syscall.Statfs("/", &stat); err != nil { return info, err }
-    info.DiskTotal = stat.Blocks * uint64(stat.Bsize)
-    info.DiskAvailable = stat.Bavail * uint64(stat.Bsize)
-    return info, nil
-}
-
-func runtimeArch() string {
-    return runtime.GOARCH
-}
-
-func readContainers(ctx context.Context) ([]containerInfo, error) {
-    ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-    defer cancel()
-    // Fixed CLI arguments, no shell and no user-supplied Docker subcommands.
-    cmd := exec.CommandContext(ctx, "docker", "ps", "-a", "--format", "{{json .}}")
-    output, err := cmd.Output()
-    if err != nil { return nil, errors.New("docker inventory unavailable") }
-    if len(output) > 2<<20 { return nil, errors.New("docker inventory too large") }
-    list := make([]containerInfo, 0)
-    scanner := bufio.NewScanner(strings.NewReader(string(output)))
-    scanner.Buffer(make([]byte, 4096), 128*1024)
-    for scanner.Scan() {
-        line := strings.TrimSpace(scanner.Text())
-        if line == "" { continue }
-        var record map[string]string
-        if err := json.Unmarshal([]byte(line), &record); err != nil { return nil, err }
-        list = append(list, containerInfo{
-            ID: record["ID"], Name: record["Names"], Image: record["Image"],
-            State: record["State"], Status: record["Status"],
-        })
-        if len(list) > 500 { return nil, errors.New("too many containers") }
-    }
-    if err := scanner.Err(); err != nil { return nil, err }
-    return list, nil
-}
-
-func newAgent(token string) *agent {
-    return &agent{token: token, system: readSystem, containers: readContainers}
-}
-
-func jsonResponse(w http.ResponseWriter, status int, value any) {
-    w.Header().Set("Content-Type", "application/json; charset=utf-8")
-    w.WriteHeader(status)
-    _ = json.NewEncoder(w).Encode(value)
-}
-
-func (a *agent) authorized(r *http.Request) bool {
-    username, password, ok := r.BasicAuth()
-    if !ok { return false }
-    userOK := subtle.ConstantTimeCompare([]byte(username), []byte("admin")) == 1
-    passOK := subtle.ConstantTimeCompare([]byte(password), []byte(a.token)) == 1
-    return userOK && passOK
-}
-
-func (a *agent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Cache-Control", "no-store")
-    w.Header().Set("X-Content-Type-Options", "nosniff")
-    w.Header().Set("X-Frame-Options", "DENY")
-    w.Header().Set("Referrer-Policy", "no-referrer")
-    w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
-    if r.Method != http.MethodGet {
-        w.Header().Set("Allow", "GET")
-        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-        return
-    }
-    if r.URL.Path == "/api/v1/health" {
-        jsonResponse(w, http.StatusOK, map[string]any{"ok": true, "version": version})
-        return
-    }
-    if !a.authorized(r) {
-        w.Header().Set("WWW-Authenticate", `Basic realm="MackNa Cloud Node 01", charset="UTF-8"`)
-        http.Error(w, "unauthorized", http.StatusUnauthorized)
-        return
-    }
-    switch r.URL.Path {
-    case "/api/v1/system":
-        info, err := a.system()
-        if err != nil { jsonResponse(w, 503, map[string]string{"error": "system_metrics_unavailable"}); return }
-        jsonResponse(w, 200, info)
-    case "/api/v1/containers":
-        containers, err := a.containers(r.Context())
-        if err != nil { jsonResponse(w, 503, map[string]string{"error": "docker_inventory_unavailable"}); return }
-        jsonResponse(w, 200, containers)
-    case "/":
-        info, sysErr := a.system()
-        containers, dockerErr := a.containers(r.Context())
-        w.Header().Set("Content-Type", "text/html; charset=utf-8")
-        data := struct {
-            Node string
-            Info systemInfo
-            SystemOK bool
-            DockerOK bool
-            Containers []containerInfo
-            Version string
-        }{ Node: "Node 01", Info: info, SystemOK: sysErr == nil,
-           DockerOK: dockerErr == nil, Containers: containers, Version: version }
-        if err := page.Execute(w, data); err != nil { log.Printf("dashboard render error: %v", err) }
-    default:
-        http.NotFound(w, r)
-    }
-}
-
-func main() {
-    token := os.Getenv("MACKNA_ADMIN_TOKEN")
-    if len(token) < 32 {
-        log.Fatal("MACKNA_ADMIN_TOKEN must be a randomly generated secret of at least 32 characters")
-    }
-    srv := &http.Server{
-        Addr: listenAddress,
-        Handler: newAgent(token),
-        ReadHeaderTimeout: 5*time.Second,
-        WriteTimeout: 10*time.Second,
-        IdleTimeout: 30*time.Second,
-        MaxHeaderBytes: 8192,
-    }
-    log.Printf("MackNa Cloud agent %s listening on %s (SSH tunnel only)", version, listenAddress)
-    if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-        log.Fatal(fmt.Errorf("server stopped: %w", err))
-    }
+func usage(){fmt.Fprintln(os.Stderr,"usage: mackna-agent serve | token create NAME SCOPES | token list | token revoke ID")}
+func main(){
+ data:=os.Getenv("MACKNA_DATA_DIR");if data==""{data="/var/lib/mackna"}
+ tokenStore:=&auth.Store{File:data+"/tokens.json"}
+ if len(os.Args)<2{usage();os.Exit(2)}
+ switch os.Args[1] {
+ case "token":
+  if len(os.Args)<3{usage();os.Exit(2)}
+  switch os.Args[2]{
+  case "create":
+   if len(os.Args)!=5{usage();os.Exit(2)}
+   plain,tok,err:=tokenStore.Create(os.Args[3],strings.Split(os.Args[4],","))
+   if err!=nil{log.Fatal(err)}
+   fmt.Printf("Token %s criado; guarde o segredo agora (não será exibido novamente):\n%s\n",tok.ID,plain)
+  case "list":
+   list,err:=tokenStore.List();if err!=nil{log.Fatal(err)}
+   for _,tok:=range list{fmt.Printf("%s %s scopes=%s revoked=%t\n",tok.ID,tok.Name,strings.Join(tok.Scopes,","),tok.Revoked)}
+  case "revoke":
+   if len(os.Args)!=4{usage();os.Exit(2)}
+   if err:=tokenStore.Revoke(os.Args[3]);err!=nil{log.Fatal(err)}
+   fmt.Println("Token revogado")
+  default:usage();os.Exit(2)
+  }
+ case "serve":
+  socket:=os.Getenv("MACKNA_GATE_SOCKET")
+  if socket==""{socket="/run/mackna-gate/docker-ro.sock"}
+  server:=&http.Server{
+   Addr:listenAddress,Handler:newController(tokenStore,socket),
+   ReadHeaderTimeout:5*time.Second,WriteTimeout:20*time.Second,IdleTimeout:30*time.Second,MaxHeaderBytes:8192,
+  }
+  log.Printf("MackNa controller v%s on %s (SSH tunnel only)",version,listenAddress)
+  if err:=server.ListenAndServe();err!=nil&& !errors.Is(err,http.ErrServerClosed){log.Fatal(err)}
+ default:usage();os.Exit(2)
+ }
 }
