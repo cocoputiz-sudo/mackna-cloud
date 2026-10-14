@@ -1,0 +1,31 @@
+[Unit]
+Description=MackNa Cloud Node Agent (read-only MVP)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=mackna
+Group=mackna
+SupplementaryGroups=docker
+EnvironmentFile=/etc/mackna/mackna.env
+ExecStart=/usr/local/bin/mackna-agent
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+MemoryMax=96M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
