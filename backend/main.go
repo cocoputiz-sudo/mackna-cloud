@@ -223,6 +223,7 @@ func (c *controller) ServeHTTP(w http.ResponseWriter,r *http.Request){
    Node string;Info systemInfo;SystemOK bool;DockerOK bool;Containers []containerInfo;Version string
   }{"Node 01",info,errSys==nil,errDock==nil,containers,version});err!=nil{log.Printf("render error: %v",err)}
  default:
+  if strings.HasPrefix(r.URL.Path,"/api/v1/postgres/lab/") {c.servePostgresLab(w,r);return}
   const prefix="/api/v1/containers/"
   if !strings.HasPrefix(r.URL.Path,prefix){jsonResponse(w,404,map[string]string{"error":"not_found"});return}
   sub:=strings.TrimPrefix(r.URL.Path,prefix)
