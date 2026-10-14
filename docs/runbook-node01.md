@@ -112,3 +112,14 @@ Logs são consultados apenas sob solicitação explícita na página do serviço
 Não há exec, restart, deploy, alteração de Compose, mudança de imagem nem manipulação do Docker Socket pelo controlador. Toda consulta aos serviços utiliza a lista normalizada pelo gate. Falhas individuais de inspect/stats/logs não interrompem o painel. O pacote de CI desta etapa chama-se mackna-pr3-node01-arm64.
 
 Para homologar, primeiro instalar somente quando autorizado e depois verificar: navegação do projeto IMORTAIS, dois serviços healthy, métricas e logs com token adequado; logs negados com token read; saúde do backend e do PostgreSQL antes e depois; temperatura, RAM e espaço livres estáveis. Se a UI apresentar falhas, reverter exclusivamente os binários MackNa, preservando Docker e contêineres. A atualização do gate não altera a allowlist nem habilita escrita.
+
+
+### Atualização incremental segura do PR #3
+
+Quando o PR estiver homologado e autorizado, não é necessário reinstalar o Gate, pois o contrato Docker não mudou. Com o artifact mackna-pr3-node01-arm64 extraído na BTV11, execute como root a partir da raiz do pacote:
+
+~~~bash
+bash scripts/upgrade-agent.sh dist/mackna-agent-linux-arm64
+~~~
+
+O script confirma ARM64, existência do agent e serviço ativo, saúde HTTP antes da troca, aplica novo binário de modo atômico, reinicia somente mackna-agent, consulta a saúde por até 10 tentativas e faz rollback automático se falhar. O binário anterior fica em /usr/local/bin/mackna-agent.previous. Não altera Docker, Gate, PostgreSQL nem backend IMORTAIS. Se o Node já estiver unhealthy antes do upgrade, aborta sem alterações.

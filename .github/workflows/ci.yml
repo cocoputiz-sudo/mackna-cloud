@@ -49,5 +49,6 @@ jobs:
             deploy/systemd/mackna-agent.service
             deploy/systemd/mackna-gate.service
             scripts/install-node.sh
+            scripts/upgrade-agent.sh
           retention-days: 14
           if-no-files-found: error

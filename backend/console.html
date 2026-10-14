@@ -60,7 +60,7 @@ footer{margin-top:24px;color:#829ab7;font-size:.81rem}
 <td>{{.Image}}</td><td>{{.State}}</td><td>{{.Health}}</td>
 </tr>{{end}}</tbody></table></div></section>
 {{else if eq .Section "service"}}
-<section class="hero"><p><a href="/projects/view?name={{.Service.Project | urlquery}}">← Projeto: {{if .Service.Project}}{{.Service.Project}}{{else}}(standalone){{end}}</a></p>
+<section class="hero"><p><a href="/projects/view?name={{if .Service.Project}}{{.Service.Project | urlquery}}{{else}}%28standalone%29{{end}}">← Projeto: {{if .Service.Project}}{{.Service.Project}}{{else}}(standalone){{end}}</a></p>
 <h2>{{.Service.Name}}</h2><small>Contêiner {{.Service.ID}} · serviço {{.Service.Service}}</small></section>
 <div class="grid">
 <section class="card"><small>Estado</small><div class="value">{{.Service.State}}</div><p class="muted">{{.Service.Status}}</p></section>

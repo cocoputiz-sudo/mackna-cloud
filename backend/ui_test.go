@@ -84,3 +84,14 @@ func TestExplicitLogsScope(t *testing.T){
  got:=req(c,"GET","/services/view?id=123456&logs=1&tail=100",token,false)
  if got.Code!=200||!strings.Contains(got.Body.String(),"[stdout] test"){t.Fatal("read+logs token should view logs")}
 }
+
+func TestStandaloneBackLink(t *testing.T){
+ c,read,_:=setup(t)
+ c.Containers=func(context.Context)([]containerInfo,error){
+  return []containerInfo{{ID:"123456",Name:"orphan",State:"running"}},nil
+ }
+ got:=req(c,"GET","/services/view?id=123456",read,false)
+ if got.Code!=200||!strings.Contains(got.Body.String(),"/projects/view?name=%28standalone%29"){
+  t.Fatalf("standalone project link must resolve: %d %s",got.Code,got.Body.String())
+ }
+}

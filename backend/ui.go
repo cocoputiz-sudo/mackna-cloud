@@ -143,6 +143,7 @@ func (c *controller) serveConsole(w http.ResponseWriter,r *http.Request,tok auth
  containers,err:=c.Containers(ctx)
  if err!=nil {
   data.Error="Não foi possível consultar o inventário do Docker."
+  w.Header().Set("Content-Type","text/html; charset=utf-8")
   w.WriteHeader(http.StatusServiceUnavailable)
   renderConsole(w,data)
   return
