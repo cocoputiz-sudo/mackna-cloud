@@ -1,73 +1,78 @@
 package main
 
 import (
-    "context"
-    "encoding/json"
-    "net/http"
-    "net/http/httptest"
-    "strings"
-    "testing"
+ "bytes"
+ "context"
+ "encoding/json"
+ "io"
+ "net/http"
+ "net/http/httptest"
+ "path/filepath"
+ "strings"
+ "testing"
+
+ "github.com/cocoputiz-sudo/mackna-cloud/backend/internal/auth"
 )
 
-func sampleAgent() *agent {
-    return &agent{
-        token: strings.Repeat("a", 64),
-        system: func() (systemInfo,error) {
-            return systemInfo{Hostname:"tvbox",Architecture:"linux/arm64",MemoryTotal:200,MemoryAvailable:100,DiskTotal:1000,DiskAvailable:900},nil
-        },
-        containers: func(context.Context) ([]containerInfo,error) {
-            return []containerInfo{{ID:"abc",Name:"mackna-btv-db-1",Image:"postgres:16-alpine",State:"running",Status:"Up (healthy)"}},nil
-        },
-    }
+type roundTripFunc func(*http.Request)(*http.Response,error)
+func (f roundTripFunc) RoundTrip(r *http.Request)(*http.Response,error){return f(r)}
+func setup(t *testing.T)(*controller,string,string){
+ t.Helper()
+ store:=&auth.Store{File:filepath.Join(t.TempDir(),"tokens.json")}
+ read,_,err:=store.Create("reader",[]string{auth.Read});if err!=nil{t.Fatal(err)}
+ admin,_,err:=store.Create("admin",[]string{auth.Admin});if err!=nil{t.Fatal(err)}
+ c:=&controller{Tokens:store}
+ c.System=func()(systemInfo,error){return systemInfo{Hostname:"btv11",Architecture:"linux/arm64",MemoryTotal:1900000,MemoryAvailable:1000000,DiskTotal:14000000000,DiskAvailable:9000000000},nil}
+ c.Containers=func(context.Context)([]containerInfo,error){return []containerInfo{{ID:"123456",Name:"mackna-btv-app-1",State:"running",Health:"healthy",Project:"mackna-btv",Service:"app"}},nil}
+ c.HTTP=&http.Client{Transport:roundTripFunc(func(r *http.Request)(*http.Response,error){
+  response:=`{"ok":true}`
+  if strings.Contains(r.URL.Path,"/stats"){response=`{"cpuPercent":5.2}`}
+  if strings.Contains(r.URL.Path,"/logs"){response=`{"lines":[{"stream":"stdout","text":"test"}]}`}
+  return &http.Response{StatusCode:200,Body:io.NopCloser(strings.NewReader(response)),Header:http.Header{}},nil
+ })}
+ return c,read,admin
 }
-
-func send(agent *agent, method, path, user, pass string) *httptest.ResponseRecorder {
-    request := httptest.NewRequest(method,path,nil)
-    if user != "" { request.SetBasicAuth(user,pass) }
-    result := httptest.NewRecorder()
-    agent.ServeHTTP(result,request)
-    return result
+func req(c *controller,method,path,token string,basic bool)*httptest.ResponseRecorder{
+ r:=httptest.NewRequest(method,path,nil)
+ if token!=""{if basic{r.SetBasicAuth("admin",token)}else{r.Header.Set("Authorization","Bearer "+token)}}
+ w:=httptest.NewRecorder();c.ServeHTTP(w,r)
+ return w
 }
-
-func TestNoUnauthenticatedData(t *testing.T) {
-    a := sampleAgent()
-    for _, route := range []string{"/", "/api/v1/system","/api/v1/containers"} {
-        res:=send(a, http.MethodGet,route,"","")
-        if res.Code!=401 {t.Fatalf("%s returned %d, wanted 401",route,res.Code)}
-        if strings.Contains(res.Body.String(),"tvbox") {t.Fatal("unauthenticated data leak")}
-    }
-    if res:=send(a,http.MethodGet,"/api/v1/system","admin","wrong");res.Code!=401 {t.Fatal("incorrect password accepted")}
-    if res:=send(a,http.MethodGet,"/api/v1/system","root",a.token);res.Code!=401 {t.Fatal("incorrect user accepted")}
+func TestUnauthorizedAndMethods(t *testing.T){
+ c,read,_:=setup(t)
+ for _,path:=range []string{"/","/api/v1/system","/api/v1/containers","/api/v1/projects","/api/v1/containers/id/stats","/api/v1/containers/id/logs"}{
+  if r:=req(c,"GET",path,"",false);r.Code!=401{t.Fatalf("%s: status %d",path,r.Code)}
+ }
+ if r:=req(c,"GET","/api/v1/containers/id/logs",read,false);r.Code!=401{t.Fatal("read token cannot fetch logs")}
+ if r:=req(c,"POST","/api/v1/containers","",false);r.Code!=405{t.Fatal("non-read method allowed")}
+ if r:=req(c,"GET","/api/v1/system","wrong",false);r.Code!=401{t.Fatal("bad credential allowed")}
 }
-
-func TestHealthAndReadOnlyAPI(t *testing.T) {
-    a:=sampleAgent()
-    res:=send(a,http.MethodGet,"/api/v1/health","","")
-    if res.Code!=200 {t.Fatalf("health returned %d",res.Code)}
-    res=send(a,http.MethodGet,"/api/v1/system","admin",a.token)
-    if res.Code!=200 {t.Fatalf("system returned %d: %s",res.Code,res.Body.String())}
-    var sys systemInfo
-    if err:=json.Unmarshal(res.Body.Bytes(),&sys);err!=nil||sys.Hostname!="tvbox" {t.Fatalf("invalid system response: %v %+v",err,sys)}
-    res=send(a,http.MethodGet,"/api/v1/containers","admin",a.token)
-    if res.Code!=200||!strings.Contains(res.Body.String(),"postgres:16-alpine") {t.Fatalf("container inventory failed: %d",res.Code)}
-    res=send(a,http.MethodGet,"/","admin",a.token)
-    if res.Code!=200||!strings.Contains(res.Body.String(),"MackNa Cloud")||!strings.Contains(res.Body.String(),"mackna-btv-db-1") {
-        t.Fatalf("dashboard render failed: %d: %s",res.Code,res.Body.String())
-    }
-    if !strings.Contains(res.Header().Get("Content-Security-Policy"),"default-src 'none'") {t.Fatal("CSP missing")}
-    res=send(a,http.MethodPost,"/api/v1/containers","admin",a.token)
-    if res.Code!=405 {t.Fatalf("mutating HTTP method returned %d",res.Code)}
+func TestAPIAndDashboard(t *testing.T){
+ c,read,admin:=setup(t)
+ for _,path:=range []string{"/api/v1/system","/api/v1/containers","/api/v1/projects","/api/v1/containers/abc/stats"}{
+  r:=req(c,"GET",path,read,false)
+  if r.Code!=200 {t.Fatalf("%s status=%d body=%s",path,r.Code,r.Body.String())}
+ }
+ r:=req(c,"GET","/api/v1/containers/abc/logs?tail=10",admin,false)
+ if r.Code!=200||!bytes.Contains(r.Body.Bytes(),[]byte("test")){t.Fatalf("logs: %d %s",r.Code,r.Body.String())}
+ r=req(c,"GET","/",admin,true)
+ if r.Code!=200||!strings.Contains(r.Body.String(),"MackNa Cloud")||!strings.Contains(r.Body.String(),"mackna-btv-app-1"){
+  t.Fatalf("invalid dashboard response %d",r.Code)
+ }
+ if !strings.Contains(r.Header().Get("Content-Security-Policy"),"default-src 'none'"){t.Fatal("missing CSP")}
 }
-
-func TestHealthDoesNotRequireDocker(t *testing.T) {
-    a:=sampleAgent()
-    a.containers=func(context.Context)([]containerInfo,error){return nil,context.DeadlineExceeded}
-    res:=send(a,http.MethodGet,"/api/v1/containers","admin",a.token)
-    if res.Code!=503 {t.Fatalf("missing Docker should be 503, got %d",res.Code)}
-    res=send(a,http.MethodGet,"/api/v1/health","","")
-    if res.Code!=200 {t.Fatal("Docker must not break liveness")}
+func TestHealthAndInputValidation(t *testing.T){
+ c,_,admin:=setup(t)
+ r:=req(c,"GET","/api/v1/health","",false)
+ if r.Code!=200{t.Fatal("health must respond 200 with fake gate")}
+ var status map[string]any
+ if err:=json.Unmarshal(r.Body.Bytes(),&status);err!=nil||status["docker"]!=true{t.Fatal("bad health payload")}
+ for _,path:=range []string{"/api/v1/containers/abc/logs?tail=1001","/api/v1/containers/abc/logs?tail=0","/api/v1/containers/..%2Fsecret"}{
+  r:=req(c,"GET",path,admin,false)
+  if r.Code<400{t.Fatalf("accepted invalid request %s",path)}
+ }
+ if r:=req(c,"GET","/api/v1/containers/abc/logs?tail=10",admin,false);r.Code!=200{t.Fatalf("good logs: %d",r.Code)}
 }
-
-func TestHumanBytes(t *testing.T) {
-    if humanBytes(1024)!="1.0 KiB" || humanBytes(1024*1024)!="1.0 MiB" {t.Fatal("unexpected memory formatting")}
+func TestHumanBytes(t *testing.T){
+ if humanBytes(1024)!="1.0 KiB"||humanBytes(1024*1024)!="1.0 MiB"{t.Fatal("byte formatter broken")}
 }
