@@ -18,12 +18,13 @@ small,.muted{color:#9cabc0}.tag{display:inline-block;padding:5px 10px;border:1px
 table{border-collapse:collapse;width:100%;text-align:left} th,td{padding:12px;border-bottom:1px solid #303e53;overflow-wrap:anywhere}
 th{color:#aebdd0;font-size:.78rem;text-transform:uppercase;letter-spacing:.06em}
 table tbody tr:last-child td{border:0}
+a{color:#92bfff;text-decoration:none}a:hover{text-decoration:underline}.navlink{display:inline-block;margin:0 14px 8px 0}
 footer{font-size:.82rem;color:#9cabc0;margin-top:24px}
 @media(max-width:720px){body{padding:14px} .grid{grid-template-columns:1fr}header{align-items:start;flex-direction:column}.card{padding:16px}table{font-size:.82rem}}
 </style>
 </head>
 <body>
-<header><div><h1>☁ MackNa Cloud</h1><div class="muted">Painel de observabilidade · {{.Node}}</div></div><span class="tag">MVP {{.Version}} · SOMENTE LEITURA</span></header>
+<header><div><h1>☁ MackNa Cloud</h1><div class="muted">Painel de observabilidade · {{.Node}}</div></div><div><a class="navlink" href="/projects">Explorar projetos →</a> <span class="tag">v{{.Version}} · SOMENTE LEITURA</span></div></header>
 {{if .SystemOK}}
 <div class="grid">
 <section class="card"><small>Servidor</small><div class="value">{{.Info.Hostname}}</div><div class="muted">{{.Info.Architecture}}</div></section>
@@ -40,7 +41,7 @@ footer{font-size:.82rem;color:#9cabc0;margin-top:24px}
 {{if .DockerOK}}
 {{if .Containers}}
 <div style="overflow-x:auto"><table><thead><tr><th>Serviço</th><th>Imagem</th><th>Estado</th><th>Status Docker</th></tr></thead><tbody>
-{{range .Containers}}<tr><td><strong>{{.Name}}</strong></td><td>{{.Image}}</td><td>{{.State}}</td><td>{{.Status}}</td></tr>{{end}}
+{{range .Containers}}<tr><td><a href="/services/view?id={{.ID}}"><strong>{{.Name}}</strong></a></td><td>{{.Image}}</td><td>{{.State}}</td><td>{{.Status}}</td></tr>{{end}}
 </tbody></table></div>
 {{else}}<p class="muted">Nenhum contêiner encontrado.</p>{{end}}
 {{else}}<p class="alert">Inventário Docker indisponível. Verifique as permissões do agente no host.</p>{{end}}

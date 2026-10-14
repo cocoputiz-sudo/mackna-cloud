@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.Title}} · MackNa Cloud</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#080d16;color:#e8f1ff}
+*{box-sizing:border-box}
+body{max-width:1180px;margin:auto;padding:26px}
+a{color:#a6cbff;text-decoration:none}
+a:hover{text-decoration:underline}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #29364c;padding-bottom:22px}
+h1{font-size:1.9rem;letter-spacing:-.04em;margin:4px 0}
+h2{font-size:1.16rem;margin:0 0 14px}
+nav{display:flex;gap:15px;align-items:center;flex-wrap:wrap}
+.muted,small{color:#9caec6}
+.pill{font-size:.76rem;border:1px solid #47627c;color:#a6e3c5;border-radius:30px;padding:7px 10px;white-space:nowrap}
+.hero{margin:24px 0}.hero p{margin:4px 0}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.card{border:1px solid #2d3b51;background:#121d2e;border-radius:14px;padding:20px;min-width:0;margin-bottom:16px}
+.card a.heading{font-size:1.15rem;font-weight:700;display:block;margin-bottom:12px}
+.value{font-size:1.55rem;font-weight:750;overflow-wrap:anywhere}
+.alert{color:#ffb7a4}.positive{color:#97ecc4}
+table{width:100%;border-collapse:collapse;text-align:left}
+th,td{padding:12px;border-bottom:1px solid #2c3a50;overflow-wrap:anywhere}
+th{color:#9fb0c7;font-size:.74rem;text-transform:uppercase;letter-spacing:.07em}
+tr:last-child td{border-bottom:0}
+.table-wrap{overflow-x:auto}
+.kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.kv div{overflow-wrap:anywhere}
+.kv small{display:block;margin-bottom:6px}
+.logs{white-space:pre-wrap;overflow-wrap:anywhere;background:#070d16;padding:18px;border:1px solid #35425a;border-radius:9px;max-height:560px;overflow-y:auto;font-size:.79rem;line-height:1.6}
+button,select{background:#192a42;color:#e7f1ff;border:1px solid #436084;border-radius:8px;padding:9px 12px;font:inherit}
+form{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:15px 0}
+footer{margin-top:24px;color:#829ab7;font-size:.81rem}
+@media(max-width:760px){body{padding:14px}header{display:block}.grid,.kv{grid-template-columns:1fr}.card{padding:15px}th,td{font-size:.82rem}nav{margin-top:12px}}
+</style>
+</head>
+<body>
+<header><div><small>MACKNA CLOUD · NODE 01</small><h1>{{.Title}}</h1></div>
+<nav><a href="/">Visão geral</a><a href="/projects">Projetos</a><span class="pill">v{{.Version}} · SOMENTE LEITURA</span></nav></header>
+{{if .Error}}<section class="card alert">{{.Error}}</section>{{end}}
+{{if eq .Section "projects"}}
+<section class="hero"><p>Projetos detectados automaticamente no Docker Compose.</p><small>{{len .Projects}} projeto(s) · {{.Total}} contêiner(es) · atualiza ao recarregar</small></section>
+{{if .Projects}}<div class="grid">{{range .Projects}}
+<section class="card"><a class="heading" href="/projects/view?name={{.Name | urlquery}}">{{.Name}} ↗</a>
+<div class="value">{{.Running}} / {{.Total}}</div><small>Serviços em execução</small>
+<p class="{{if .Degraded}}alert{{else}}positive{{end}}">{{if .Degraded}}{{.Degraded}} serviço(s) com atenção{{else}}Sem serviço parado ou unhealthy{{end}}</p>
+<a href="/projects/view?name={{.Name | urlquery}}">Abrir serviços →</a>
+</section>{{end}}</div>
+{{else if not .Error}}<section class="card muted">Nenhum projeto encontrado.</section>{{end}}
+{{else if eq .Section "project"}}
+<section class="hero"><p><a href="/projects">← Voltar aos projetos</a></p><h2>{{.Project.Name}}</h2>
+<small>{{.Project.Total}} serviço(s) · {{.Project.Running}} em execução · {{.Project.Degraded}} exigem atenção</small></section>
+<section class="card"><div class="table-wrap"><table>
+<thead><tr><th>Serviço</th><th>Imagem</th><th>Estado</th><th>Saúde</th></tr></thead>
+<tbody>{{range .Project.Services}}<tr>
+<td><a href="/services/view?id={{.ID}}"><strong>{{.Name}}</strong></a></td>
+<td>{{.Image}}</td><td>{{.State}}</td><td>{{.Health}}</td>
+</tr>{{end}}</tbody></table></div></section>
+{{else if eq .Section "service"}}
+<section class="hero"><p><a href="/projects/view?name={{.Service.Project | urlquery}}">← Projeto: {{if .Service.Project}}{{.Service.Project}}{{else}}(standalone){{end}}</a></p>
+<h2>{{.Service.Name}}</h2><small>Contêiner {{.Service.ID}} · serviço {{.Service.Service}}</small></section>
+<div class="grid">
+<section class="card"><small>Estado</small><div class="value">{{.Service.State}}</div><p class="muted">{{.Service.Status}}</p></section>
+<section class="card"><small>Saúde Docker</small><div class="value">{{.Service.Health}}</div><p class="muted">Origem: Docker Engine</p></section>
+<section class="card"><small>Imagem</small><div style="overflow-wrap:anywhere">{{.Service.Image}}</div></section>
+</div>
+<div class="grid">
+<section class="card"><h2>Inspeção segura</h2>
+{{if .InspectOK}}<div class="kv">
+<div><small>Reinicializações</small><strong>{{.Inspection.RestartCount}}</strong></div>
+<div><small>OOM killed</small><strong>{{.Inspection.OOMKilled}}</strong></div>
+<div><small>Limite de memória</small><strong>{{if .Inspection.MemoryLimitBytes}}{{human .Inspection.MemoryLimitBytes}}{{else}}Sem limite{{end}}</strong></div>
+<div><small>Executando</small><strong>{{.Inspection.Running}}</strong></div>
+</div>{{else}}<p class="alert">Inspeção indisponível.</p>{{end}}</section>
+<section class="card"><h2>CPU</h2>{{if .MetricsOK}}<div class="value">{{printf "%.1f" .Metrics.CPUPercent}}%</div><small>Leitura instantânea do Docker</small>
+{{else}}<p class="alert">Métricas indisponíveis.</p>{{end}}</section>
+<section class="card"><h2>Memória</h2>{{if .MetricsOK}}<div class="value">{{human .Metrics.MemoryUsageBytes}}</div>
+<small>Limite: {{if .Metrics.MemoryLimitBytes}}{{human .Metrics.MemoryLimitBytes}}{{else}}indisponível{{end}}</small>
+{{else}}<p class="alert">Métricas indisponíveis.</p>{{end}}</section>
+</div>
+<section class="card"><h2>Logs de aplicação</h2>
+{{if .CanLogs}}
+<p class="muted">Consulta sob demanda. Logs podem conter segredos; mantenha seu token privado.</p>
+<form method="get" action="/services/view">
+<input type="hidden" name="id" value="{{.Service.ID}}">
+<input type="hidden" name="logs" value="1">
+<label for="tail">Linhas:</label>
+<select id="tail" name="tail"><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="500">500</option><option value="1000">1000</option></select>
+<button type="submit">Consultar logs</button></form>
+{{if .ShowLogs}}<small>Últimas {{.Tail}} linhas solicitadas, sem acompanhamento ao vivo</small>
+{{if .LogError}}<p class="alert">{{.LogError}}</p>
+{{else if .LogLines}}<pre class="logs">{{range .LogLines}}[{{.Stream}}] {{.Text}}{{end}}</pre>
+{{else}}<p class="muted">Nenhuma linha de log retornada.</p>{{end}}
+{{end}}
+{{else}}<p class="muted">Este acesso não possui permissão para logs. Use um token com escopo logs ou admin.</p>{{end}}
+</section>
+{{end}}
+<footer>Gerado em {{.Generated}} · Sem deploy, restart, exec ou comandos Docker de escrita. Acesso somente por túnel SSH.</footer>
+</body>
+</html>
