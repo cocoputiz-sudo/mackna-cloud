@@ -6,8 +6,9 @@ AGENT="${1:-./mackna-agent-linux-arm64}"
 GATE="${2:-./mackna-gate-linux-arm64}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE="$(cd "$HERE/.." && pwd)"
-[ -x "$AGENT" ] || { echo "Agent binary missing: $AGENT" >&2; exit 1; }
-[ -x "$GATE" ] || { echo "Gate binary missing: $GATE" >&2; exit 1; }
+[ -f "$AGENT" ] || { echo "Agent binary missing: $AGENT" >&2; exit 1; }
+[ -f "$GATE" ] || { echo "Gate binary missing: $GATE" >&2; exit 1; }
+# GitHub Actions artifact ZIP extraction may drop executable bits; install(1) restores mode 0755.
 [ "$(uname -m)" = "aarch64" ] || { echo "This installer is for ARM64" >&2; exit 1; }
 getent group docker >/dev/null || { echo "Docker group missing" >&2; exit 1; }
 getent group mackna >/dev/null || groupadd --system mackna
