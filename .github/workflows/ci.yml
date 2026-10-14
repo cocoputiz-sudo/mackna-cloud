@@ -1,8 +1,8 @@
-name: MackNa Cloud PR2 - Node 01
+name: MackNa Cloud PR3 - Project Console
 
 on:
   push:
-    branches: [main, feat/mvp-node01-observability-20261014, feat/pr2-claude-integrated-controller-20261014]
+    branches: [main, feat/mvp-node01-observability-20261014, feat/pr2-claude-integrated-controller-20261014, feat/pr3-project-console-20261014]
   pull_request:
   workflow_dispatch:
 
@@ -25,6 +25,8 @@ jobs:
         run: go test -race -count=1 ./...
       - name: Go vet
         run: go vet ./...
+      - name: Go coverage
+        run: go test -cover ./...
       - name: Bash syntax checks
         working-directory: .
         run: bash -n scripts/*.sh
@@ -41,11 +43,12 @@ jobs:
       - name: Upload binaries and service scripts
         uses: actions/upload-artifact@v4
         with:
-          name: mackna-pr2-node01-arm64
+          name: mackna-pr3-node01-arm64
           path: |
             dist/*
             deploy/systemd/mackna-agent.service
             deploy/systemd/mackna-gate.service
             scripts/install-node.sh
+            scripts/upgrade-agent.sh
           retention-days: 14
           if-no-files-found: error
