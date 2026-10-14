@@ -1,16 +1,18 @@
 [Unit]
-Description=MackNa Cloud Node Agent (read-only MVP)
-After=network-online.target docker.service
+Description=MackNa Cloud control plane - read-only PR2
+After=network-online.target mackna-gate.service
 Wants=network-online.target
-Requires=docker.service
+Requires=mackna-gate.service
 
 [Service]
 Type=simple
 User=mackna
 Group=mackna
-SupplementaryGroups=docker
-EnvironmentFile=/etc/mackna/mackna.env
-ExecStart=/usr/local/bin/mackna-agent
+Environment=MACKNA_DATA_DIR=/var/lib/mackna
+Environment=MACKNA_GATE_SOCKET=/run/mackna-gate/docker-ro.sock
+ExecStart=/usr/local/bin/mackna-agent serve
+StateDirectory=mackna
+StateDirectoryMode=0700
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
@@ -19,11 +21,12 @@ ProtectSystem=strict
 ProtectHome=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
+ProtectKernelLogs=true
 ProtectControlGroups=true
-LockPersonality=true
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 AmbientCapabilities=
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 MemoryMax=96M
 TasksMax=64
 
