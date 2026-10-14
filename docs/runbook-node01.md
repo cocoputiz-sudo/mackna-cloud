@@ -1,82 +1,101 @@
-# Node 01: implantação segura do primeiro agente
+# MackNa Cloud PR #2 — Node 01 (Debian 13 ARM64)
 
-> **Ainda não executar na BTV11 sem revisar o PR e baixar o artefato após CI aprovado.**
-> Esta etapa **não altera** os contêineres da IMORTAIS nem o Railway de produção.
+**Status: código de homologação, não instalado automaticamente na BTV11.** Não há comandos de escrita na API; a IMORTAIS e o Railway original continuam intocados.
 
-## 1. Pré-requisitos
+## Arquitetura conjunta
 
-- Debian 13 ARM64 inicializando pela eMMC, Docker Engine operacional.
-- Imagens do PostgreSQL e IMORTAIS já homologadas de forma independente na BTV11.
-- Um artefato `mackna-agent-linux-arm64` produzido pelo GitHub Actions (não compilar na BTV11).
-- Acesso SSH como usuário com acesso root via `su -`.
+- `mackna-agent` (também chamado `macknad` no desenho do Claude): control plane Go, dashboard HTML, tokens `read`, `logs`, `admin`, API HTTP **somente loopback** `127.0.0.1:8090`.
+- `mackna-gate`: processo separado, única peça MackNa no grupo `docker`; acessa `/var/run/docker.sock` e oferece um socket Unix intermediário controlado.
+- O agente **não pertence ao grupo docker**; o gate normaliza o JSON do Docker e remove `Config.Env`, comandos, mounts e labels arbitrárias antes de retorná-lo.
+- O dashboard do meu PR #1 foi mantido e expandido com temperatura. O gate e o armazenamento de tokens são adaptações das ideias fornecidas pelo Claude, não cópias literais do patch externo.
 
-## 2. Baixar o binário produzido pelo Actions
+## Requisitos
 
-No GitHub, abra **Actions > MackNa Cloud MVP > execução aprovada > Artifacts > mackna-agent-linux-arm64**.
+- Debian 13 ARM64 na BTV11, Docker instalado e funcionando.
+- Contêineres IMORTAIS `mackna-btv-app-1` / `mackna-btv-db-1` existentes e independentes.
+- Usuário root disponível via `su -`, sem depender de `sudo`.
+- O CI deste PR aprovado.
 
-Extraia o ZIP no PC; verifique se contém o executável `mackna-agent-linux-arm64`.
+## Download
 
-A partir do PowerShell no Windows, ajuste o caminho local e envie **apenas o binário**:
+Em `Actions > MackNa Cloud PR2 - Node 01 > Run aprovado > Artifacts`, baixar o pacote `mackna-pr2-node01-arm64`. Extrair no PC ou no servidor em uma pasta temporária.
 
-```powershell
-scp .\mackna-agent-linux-arm64 imortais@192.168.15.11:/tmp/mackna-agent
-```
+O pacote contém `dist/mackna-agent-linux-arm64`, `dist/mackna-gate-linux-arm64`, `deploy/systemd/*.service` e `scripts/install-node.sh`.
 
-## 3. Instalar o serviço (na BTV11, como root)
+**Não usar o artefato antigo do PR #1**, pois ele usa HTTP Basic com outro contrato e executava diretamente consultas à CLI Docker.
 
-Transfira também o arquivo `deploy/systemd/mackna-agent.service` para `/tmp/mackna-agent.service` via SCP, ou copie-o após clonar o repositório em um diretório independente.
+## Instalação manual
+
+Com os arquivos disponíveis na BTV11, dentro da pasta extraída:
 
 ```bash
 su -
-groupadd --system mackna 2>/dev/null || true
-id mackna >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin -g mackna -G docker mackna
-install -o root -g root -m 0755 /tmp/mackna-agent /usr/local/bin/mackna-agent
-install -d -o root -g mackna -m 0750 /etc/mackna
-umask 077
-printf 'MACKNA_ADMIN_TOKEN=%s\n' "$(openssl rand -hex 32)" > /etc/mackna/mackna.env
-chown root:mackna /etc/mackna/mackna.env
-chmod 0640 /etc/mackna/mackna.env
-install -o root -g root -m 0644 /tmp/mackna-agent.service /etc/systemd/system/mackna-agent.service
-systemctl daemon-reload
-systemctl enable --now mackna-agent
-systemctl --no-pager status mackna-agent
+bash scripts/install-node.sh dist/mackna-agent-linux-arm64 dist/mackna-gate-linux-arm64
+systemctl --no-pager status mackna-gate mackna-agent
 curl -i http://127.0.0.1:8090/api/v1/health
 ```
 
-**Atenção:** o grupo `docker` concede acesso efetivamente privilegiado ao daemon. Este agente executa só métodos GET, sem shell, deploy ou edição. Ainda assim, o endpoint precisa ficar estritamente em loopback, e a conta não deve ser utilizada para outras finalidades. O endurecimento futuro deverá reduzir essa dependência.
+Nenhuma etapa reinicia o Docker, o PostgreSQL ou o backend IMORTAIS.
 
-O arquivo `/etc/mackna/mackna.env` contém um segredo: **não publique seu conteúdo, não cole no chat e não faça commit**.
+Criar o primeiro token **localmente**, como usuário `mackna`:
 
-## 4. Acessar o painel pelo Windows
+```bash
+su -s /bin/sh mackna -c '/usr/local/bin/mackna-agent token create administrador admin'
+```
 
-No PowerShell de seu PC, deixe este processo aberto:
+O token tem prefixo `mkn_` e aparece **uma única vez**, no terminal local; não o envie pelo Discord, GitHub ou chat.
+
+## Acesso pelo navegador
+
+No PowerShell do Windows, criar túnel SSH (mantê-lo aberto):
 
 ```powershell
 ssh -N -L 8090:127.0.0.1:8090 imortais@192.168.15.11
 ```
 
-Abra `http://127.0.0.1:8090/` no navegador. Ele solicitará login HTTP Basic:
+Abra `http://127.0.0.1:8090/` e autentique usando:
 
-- Usuário: `admin`
-- Senha: o valor de `MACKNA_ADMIN_TOKEN` lido **localmente** pelo administrador no servidor.
+- Usuário: `admin`;
+- Senha: **seu token `mkn_...`**.
 
-Não utilize HTTP Basic em uma interface exposta diretamente na LAN ou na internet; o SSH fornece a proteção de transporte no MVP.
-
-## 5. Critérios de aceite
-
-- O painel informa hostname, arquitetura, RAM, disco, uptime e load average.
-- São listados os contêineres existentes, inclusive os do projeto `mackna-btv`.
-- Sem login, `/api/v1/system` e `/api/v1/containers` respondem 401.
-- `POST` ou outros métodos de escrita respondem 405.
-- O serviço não reinicia, altera, recria ou remove nenhum contêiner.
-- O healthcheck `/api/v1/health` responde 200.
-- Nenhum serviço da IMORTAIS no Railway foi modificado.
-- Monitorar memória, disco e logs por 30 minutos antes de considerar homologado.
-
-## 6. Rollback
+O endpoint `/api/v1/health` não exige token, os demais exigem HTTP Bearer (ou Basic somente como login do dashboard). Exemplo de cliente CLI:
 
 ```bash
-systemctl disable --now mackna-agent
+curl -H "Authorization: Bearer SEU_TOKEN" http://127.0.0.1:8090/api/v1/system
 ```
 
-Isso apenas desativa o novo agente, sem alterar os serviços Docker existentes.
+## API
+
+| Rota | Escopo | Finalidade |
+| --- | --- | --- |
+| `GET /api/v1/health` | Público, localhost | Saúde do processo e conexão com gate/Docker |
+| `GET /` | `read` via Basic | Dashboard HTML com host e contêineres |
+| `GET /api/v1/system`, `GET /api/v1/node` | `read` | Host: arquitetura, memória, disco, uptime, carga e temperatura |
+| `GET /api/v1/containers` | `read` | Lista sanitizada |
+| `GET /api/v1/projects` | `read` | Contêineres agrupados pelo projeto Docker Compose |
+| `GET /api/v1/containers/{id}` | `read` | Inspect filtrado, sem dados sensíveis |
+| `GET /api/v1/containers/{id}/stats` | `read` | CPU e RAM da aplicação |
+| `GET /api/v1/containers/{id}/logs?tail=200` | `logs` | Logs, máximo 1000 linhas e 1MiB no gate |
+
+Todos os métodos `POST`, `PATCH`, `PUT` e `DELETE` da API são rejeitados. O gate rejeita endpoints Docker de criação, restart, exec, export, archive, etc. A API não expõe o Docker Socket.
+
+## Segurança e pendências de PR #2
+
+- O gate roda no grupo `docker`, **efetivamente privilegiado**, mesmo com interface GET. Código do gate precisa receber auditoria antes de uso em produção.
+- O gate filtra inspect/list, mas **logs de aplicativos podem conter segredos**, acessíveis somente com escopo `logs`. Não compartilhar tokens com esse escopo sem necessidade.
+- Os tokens são segredos de alta entropia; apenas SHA-256 fica no arquivo JSON `0600`, sem token em plaintext no repositório. Revogação via CLI.
+- As auditorias desta versão são linhas JSON nos logs do `journald`, sem histórico próprio pesquisável via API.
+- Ainda não existem login com cookies, sessão, UI de criar projetos, deploys, rollback, backups, multi-node ou acesso remoto HTTPS.
+- `read` pode acessar inventário e métricas, `logs` pode ver logs, `admin` herda todos os escopos. **Não conceder `admin` a agentes sem necessidade**.
+- A interface HTTP é disponibilizada somente em loopback. O túnel SSH protege o tráfego.
+- Medir memória do gate e agente por 30 minutos, a saúde da IMORTAIS e estabilidade por 24 horas antes de homologar.
+
+## Rollback
+
+```bash
+systemctl disable --now mackna-agent mackna-gate
+```
+
+Isso desativa apenas os componentes novos da MackNa, sem parar Docker ou os contêineres IMORTAIS.
+
+**Não executar mudanças em `/etc/docker/daemon.json` nem reiniciar Docker como parte da instalação do PR #2.**
