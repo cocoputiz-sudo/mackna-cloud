@@ -1,4 +1,4 @@
-name: MackNa Cloud PR3 - Project Console
+name: MackNa Cloud PR4 - PostgreSQL Lab
 
 on:
   push:
@@ -45,12 +45,13 @@ jobs:
       - name: Upload binaries and service scripts
         uses: actions/upload-artifact@v4
         with:
-          name: mackna-pr3-node01-arm64
+          name: mackna-pr4-node01-arm64
           path: |
             dist/*
             deploy/systemd/mackna-agent.service
             deploy/systemd/mackna-gate.service
             scripts/install-node.sh
             scripts/upgrade-agent.sh
+            scripts/probe-node01.sh
           retention-days: 14
           if-no-files-found: error
