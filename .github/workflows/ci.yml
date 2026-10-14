@@ -1,0 +1,42 @@
+name: MackNa Cloud MVP
+
+on:
+  push:
+    branches: [main, feat/mvp-node01-observability-20261014]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.mod
+      - name: Unit tests
+        run: go test -v -race ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Compile Linux ARM64 for BTV11
+        env:
+          GOOS: linux
+          GOARCH: arm64
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p ../dist
+          go build -trimpath -ldflags="-s -w" -o ../dist/mackna-agent-linux-arm64 .
+          file ../dist/mackna-agent-linux-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mackna-agent-linux-arm64
+          path: dist/mackna-agent-linux-arm64
+          if-no-files-found: error
+          retention-days: 14
