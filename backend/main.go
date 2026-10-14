@@ -13,6 +13,7 @@ import (
     "net/http"
     "os"
     "os/exec"
+    "runtime"
     "strconv"
     "strings"
     "syscall"
@@ -24,7 +25,19 @@ var dashboardHTML embed.FS
 
 const version = "0.1.0"
 const listenAddress = "127.0.0.1:8090" // Never expose HTTP Basic authentication directly to the LAN.
-var page = template.Must(template.ParseFS(dashboardHTML, "dashboard.html"))
+var page = template.Must(template.New("dashboard.html").Funcs(template.FuncMap{"human": humanBytes}).ParseFS(dashboardHTML, "dashboard.html"))
+
+func humanBytes(n uint64) string {
+    const unit = 1024
+    if n < unit { return fmt.Sprintf("%d B", n) }
+    v := float64(n)
+    suffix := []string{"KiB", "MiB", "GiB", "TiB"}
+    for _, unitName := range suffix {
+        v /= unit
+        if v < unit { return fmt.Sprintf("%.1f %s", v, unitName) }
+    }
+    return fmt.Sprintf("%.1f PiB", v / unit)
+}
 
 type systemInfo struct {
     Hostname       string  `json:"hostname"`
@@ -94,7 +107,7 @@ func readSystem() (systemInfo, error) {
 }
 
 func runtimeArch() string {
-    return os.Getenv("MACKNA_TEST_ARCH") // replaced below by actual GOARCH if not in tests
+    return runtime.GOARCH
 }
 
 func readContainers(ctx context.Context) ([]containerInfo, error) {
