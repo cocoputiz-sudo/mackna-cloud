@@ -196,13 +196,15 @@ func (c *controller) ServeHTTP(w http.ResponseWriter,r *http.Request){
  if r.URL.Path=="/api/v1/audit"{scope=auth.Admin}
  tok,ok:=c.authorized(r,scope)
  if !ok{
-  if r.URL.Path=="/" || r.URL.Path=="/projects" || r.URL.Path=="/projects/view" || r.URL.Path=="/services/view" {w.Header().Set("WWW-Authenticate",`Basic realm="MackNa Cloud", charset="UTF-8"`)}
+  if r.URL.Path=="/" || r.URL.Path=="/projects" || r.URL.Path=="/projects/view" || r.URL.Path=="/services/view" || r.URL.Path=="/postgres/lab" {w.Header().Set("WWW-Authenticate",`Basic realm="MackNa Cloud", charset="UTF-8"`)}
   jsonResponse(w,401,map[string]string{"error":"unauthorized"})
   log.Printf("AUDIT %s",auditLine("auth_denied",r,"",401))
   return
  }
  log.Printf("AUDIT %s",auditLine("api_access",r,tok.ID,200))
  switch r.URL.Path{
+ case "/postgres/lab":
+  c.servePostgresLabPage(w,r)
  case "/projects", "/projects/view", "/services/view":
   c.serveConsole(w,r,tok)
  case "/api/v1/system","/api/v1/node":
