@@ -8,6 +8,7 @@ import (
  "strconv"
  "strings"
  "time"
+ "sync"
 
  "github.com/cocoputiz-sudo/mackna-cloud/backend/internal/postgres"
  "github.com/jackc/pgx/v5"
@@ -15,6 +16,9 @@ import (
 
 // Phase A is opt-in and hard-limited to the disposable mackna_lab database.
 // It does not discover Docker databases, credentials, or production DSNs.
+var labQuerySlot = make(chan struct{},1)
+var labPoolMu sync.Mutex
+
 func (c *controller) servePostgresLab(w http.ResponseWriter,r *http.Request){
  if os.Getenv("MACKNA_PG_LAB_ENABLED")!="1" {
   jsonResponse(w,http.StatusNotFound,map[string]string{"error":"postgres_lab_disabled"});return
@@ -25,8 +29,16 @@ func (c *controller) servePostgresLab(w http.ResponseWriter,r *http.Request){
  if err!=nil||cfg.Database!="mackna_lab"||cfg.User!="mackna_reader" {
   jsonResponse(w,503,map[string]string{"error":"lab_configuration_rejected"});return
  }
+ select {
+ case labQuerySlot<-struct{}{}:
+  defer func(){<-labQuerySlot}()
+ default:
+  jsonResponse(w,http.StatusTooManyRequests,map[string]string{"error":"lab_busy"});return
+ }
  ctx,cancel:=context.WithTimeout(r.Context(),15*time.Second);defer cancel()
+ labPoolMu.Lock()
  reader,err:=postgres.Open(ctx,dsn)
+ labPoolMu.Unlock()
  if err!=nil{jsonResponse(w,503,map[string]string{"error":"lab_unavailable"});return}
  defer reader.Close()
  path:=strings.TrimPrefix(r.URL.Path,"/api/v1/postgres/lab/")
