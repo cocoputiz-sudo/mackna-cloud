@@ -21,6 +21,8 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.mod
+      - name: Resolve Go modules
+        run: go mod tidy
       - name: Go tests with race detector
         run: go test -race -count=1 ./...
       - name: Go vet
