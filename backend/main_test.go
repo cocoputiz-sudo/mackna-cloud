@@ -76,3 +76,32 @@ func TestHealthAndInputValidation(t *testing.T){
 func TestHumanBytes(t *testing.T){
  if humanBytes(1024)!="1.0 KiB"||humanBytes(1024*1024)!="1.0 MiB"{t.Fatal("byte formatter broken")}
 }
+
+
+func TestTemperatureAndUptimeFormatting(t *testing.T) {
+ temp := 46.75
+ if got := humanTemperature(&temp); got != "46.8 °C" {
+  t.Fatalf("temperature: expected 46.8 °C, got %q",got)
+ }
+ if got := humanTemperature(nil); got != "n/d" {
+  t.Fatalf("missing sensor should be n/d, got %q",got)
+ }
+ if got := humanUptime(12444); got != "3h 27min" {
+  t.Fatalf("uptime formatting broken: %q",got)
+ }
+ c,_,admin := setup(t)
+ c.System = func()(systemInfo,error){
+  return systemInfo{Hostname:"btv11",Architecture:"linux/arm64",TemperatureC:&temp,UptimeSeconds:12444},nil
+ }
+ response:=req(c,"GET","/",admin,true)
+ if response.Code != 200 {
+  t.Fatalf("dashboard error: %d %s",response.Code,response.Body.String())
+ }
+ body:=response.Body.String()
+ if !strings.Contains(body,"46.8 °C") || !strings.Contains(body,"3h 27min") {
+  t.Fatalf("formatted dashboard values absent: %s",body)
+ }
+ if strings.Contains(body,"%!f") || strings.Contains(body,"0x") {
+  t.Fatal("dashboard leaked Go pointer formatting")
+ }
+}
