@@ -30,7 +30,29 @@ var dashboardHTML embed.FS
 
 const version = "0.2.0"
 const listenAddress = "127.0.0.1:8090"
-var page = template.Must(template.New("dashboard.html").Funcs(template.FuncMap{"human": humanBytes}).ParseFS(dashboardHTML,"dashboard.html"))
+var page = template.Must(template.New("dashboard.html").Funcs(template.FuncMap{
+ "human": humanBytes,
+ "temperature": humanTemperature,
+ "uptime": humanUptime,
+}).ParseFS(dashboardHTML,"dashboard.html"))
+
+func humanTemperature(value *float64) string {
+ if value == nil { return "n/d" }
+ return fmt.Sprintf("%.1f °C", *value)
+}
+
+func humanUptime(seconds float64) string {
+ duration := int64(seconds)
+ if duration < 0 { duration = 0 }
+ days := duration / 86400
+ hours := (duration % 86400) / 3600
+ minutes := (duration % 3600) / 60
+ if days > 0 { return fmt.Sprintf("%dd %dh %dmin",days,hours,minutes) }
+ if hours > 0 { return fmt.Sprintf("%dh %dmin",hours,minutes) }
+ if minutes > 0 { return fmt.Sprintf("%dmin %ds",minutes,duration%60) }
+ return fmt.Sprintf("%ds",duration)
+}
+
 func humanBytes(n uint64)string{
  const k=1024
  if n<k{return fmt.Sprintf("%d B",n)}
