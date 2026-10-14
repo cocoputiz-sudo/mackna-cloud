@@ -163,6 +163,8 @@ func (s Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
   jsonOut(w,200,map[string]any{"cpuPercent":cpu,"memoryUsageBytes":used,"memoryLimitBytes":raw.Mem.Limit})
  case "logs":
   if len(q)>2 {deny(w,"invalid_query");return}
+  if q.Has("follow") || q.Has("stream") || q.Has("stdout") || q.Has("stderr") || q.Has("timestamps") {deny(w,"logs_follow_or_override_forbidden");return}
+  for key:=range q {if key!="tail" && key!="since" {deny(w,"unknown_log_query");return}}
   tail,err:=strconv.Atoi(q.Get("tail"))
   if err!=nil||tail<1||tail>MaxLogTail {deny(w,"logs_tail_required_1_1000");return}
   if v:=q.Get("since");v!="" {if _,err:=strconv.ParseInt(v,10,64);err!=nil{deny(w,"invalid_since");return}}
