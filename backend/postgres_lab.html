@@ -1,1 +1,94 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MackNa PostgreSQL Lab</title><style>body{font:15px system-ui;background:#0e1420;color:#e8edf5;max-width:1100px;margin:32px auto;padding:0 18px}a{color:#8abaff}.panel{background:#1b2638;padding:20px;border-radius:12px;margin:14px 0}button,select{background:#30445f;color:white;border:1px solid #60728a;border-radius:6px;padding:9px;margin:4px;cursor:pointer}pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#101b2b;padding:14px;border-radius:6px}small{color:#a7b4c8}.error{color:#ffb1b1}</style></head><body><a href="/projects">← Projetos</a><h1>PostgreSQL Manager <small>Laboratório / somente leitura</small></h1><p>Banco permitido: <b>mackna_lab</b>. Sem SQL arbitrário, sem escrita e sem acesso ao banco da IMORTAIS.</p><div class="panel"><h2>Visão geral</h2><button data-query="overview">Atualizar métricas</button><pre id="overview">Carregando...</pre></div><div class="panel"><h2>Catálogo</h2><button data-query="schemas">Schemas</button><button data-query="tables?schema=public">Tabelas public</button><button data-query="columns?schema=public&amp;table=mackna_fixture">Colunas de exemplo</button><button data-query="indexes?schema=public&amp;table=mackna_fixture">Índices</button><button data-query="foreign-keys?schema=public&amp;table=mackna_fixture">Relacionamentos</button><button data-query="rows?schema=public&amp;table=mackna_fixture&amp;limit=20">Registros</button><pre id="catalog">Selecione uma consulta.</pre></div><small>As consultas são limitadas a 15 segundos. Teste de carga somente no laboratório.</small><script src="/postgres/lab.js" defer></script></body></html>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MackNa Cloud | PostgreSQL Manager</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#0b1220;color:#e7edf7}
+*{box-sizing:border-box}
+body{max-width:1200px;margin:0 auto;padding:26px 22px 58px}
+a{color:#9bc4ff;text-decoration:none}
+a:hover{text-decoration:underline}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin:4px 0 22px}
+h1{font-size:clamp(1.5rem,3vw,2rem);letter-spacing:-.04em;margin:7px 0}
+h2{font-size:1.16rem;margin:0 0 12px}
+p{line-height:1.5}
+.muted,small{color:#acbad0}
+.eyebrow{font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:#9fb6d5}
+.pill{display:inline-block;border-radius:100px;border:1px solid #425c7b;padding:7px 12px;color:#c3e5d8;font-size:.78rem;white-space:nowrap}
+.panel{background:#172338;border:1px solid #2b3a52;border-radius:14px;padding:20px;margin:14px 0}
+.intro{color:#b9c7db;margin:0}
+.grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:11px;margin:20px 0 8px}
+.metric{background:#0e192a;border:1px solid #2d3c53;border-radius:11px;padding:14px;min-width:0}
+.metric strong{display:block;font-size:1.33rem;margin:8px 0;overflow-wrap:anywhere}
+.metric span{color:#a9bdd7;font-size:.8rem}
+.toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:11px;margin:14px 0}
+.toolbar label{display:flex;align-items:center;gap:8px;font-size:.9rem;color:#bfd0e6}
+button,select{font:inherit;background:#294666;color:#f5f8fe;border:1px solid #4d6986;border-radius:8px;padding:9px 12px;min-height:39px}
+button{cursor:pointer}
+button:hover:not(:disabled){background:#36597d}
+button:disabled{opacity:.44;cursor:not-allowed}
+button[aria-pressed="true"]{background:#5278a0;border-color:#a4c4e2}
+select{max-width:260px;min-width:125px}
+.status{color:#acc9e7;font-size:.9rem;min-height:22px}
+.status.error{color:#ffb8b8}
+.table-scroll{overflow-x:auto;max-width:100%;border:1px solid #33435a;border-radius:9px}
+table{border-collapse:collapse;width:100%;font-size:.88rem;text-align:left}
+th,td{padding:12px;border-bottom:1px solid #293c53;vertical-align:top;text-align:left;max-width:460px;overflow-wrap:anywhere}
+th{background:#223249;color:#c9d6e8;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td{color:#e6edf7}
+.empty{padding:22px;color:#b9c7dc;border:1px dashed #45566b;border-radius:9px}
+footer{margin-top:20px;color:#9facc0;font-size:.83rem}
+@media(max-width:820px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}body{padding:15px}.panel{padding:14px}header{flex-wrap:wrap}}
+@media(max-width:450px){.grid{grid-template-columns:1fr 1fr}.metric strong{font-size:1rem}.toolbar label{width:100%}select{flex:1}}
+</style>
+</head>
+<body>
+<header>
+ <div>
+  <a href="/projects">← Voltar aos projetos</a>
+  <div class="eyebrow">MackNa Cloud · Banco isolado</div>
+  <h1>PostgreSQL Manager</h1>
+  <p class="intro">Banco de laboratório: <strong>mackna_lab</strong>. Visualização somente leitura, sem SQL arbitrário e sem acesso ao PostgreSQL da IMORTAIS.</p>
+ </div>
+ <span class="pill">FASE A · SOMENTE LEITURA</span>
+</header>
+<section class="panel" aria-labelledby="metrics-title">
+ <div class="toolbar">
+  <h2 id="metrics-title">Visão geral</h2>
+  <button id="refresh-metrics" type="button">Atualizar métricas</button>
+ </div>
+ <div id="metrics-status" role="status" class="status">Consultando PostgreSQL...</div>
+ <div id="metrics" class="grid" aria-live="polite"></div>
+</section>
+<section class="panel" aria-labelledby="catalog-title">
+ <h2 id="catalog-title">Explorador de dados</h2>
+ <div class="toolbar">
+  <label for="schema-select">Schema
+   <select id="schema-select" aria-label="Selecionar schema"><option>Carregando...</option></select>
+  </label>
+  <label for="table-select">Tabela
+   <select id="table-select" aria-label="Selecionar tabela"><option>Carregando...</option></select>
+  </label>
+  <button id="refresh-catalog" type="button">Atualizar catálogo</button>
+ </div>
+ <div class="toolbar" role="group" aria-label="Tipo de consulta">
+  <button type="button" data-view="rows" aria-pressed="true">Registros</button>
+  <button type="button" data-view="columns" aria-pressed="false">Colunas</button>
+  <button type="button" data-view="indexes" aria-pressed="false">Índices</button>
+  <button type="button" data-view="foreign-keys" aria-pressed="false">Relacionamentos</button>
+ </div>
+ <div id="catalog-status" class="status" role="status">Carregando catálogo...</div>
+ <div id="catalog-results" aria-live="polite"></div>
+ <div class="toolbar" id="pager" hidden>
+  <button type="button" id="prev-page" disabled>← Anterior</button>
+  <span id="page-label" class="muted">Página 1</span>
+  <button type="button" id="next-page" disabled>Próxima →</button>
+ </div>
+</section>
+<footer>Consultas limitadas a 15 segundos, 1.000 linhas e 5 MiB. Navegação somente por tabelas com chave primária simples. Acesso via túnel SSH.</footer>
+<script src="/postgres/lab.js" defer></script>
+</body>
+</html>
