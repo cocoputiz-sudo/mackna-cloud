@@ -24,8 +24,9 @@ func TestPostgresLabCSPAndAssets(t *testing.T) {
  for _,forbidden:=range []string{"<script>","onclick=", "onload="} {
   if strings.Contains(page,forbidden){t.Fatalf("CSP-incompatible inline code: %q",forbidden)}
  }
- if !strings.Contains(page,`data-query="overview"`) ||
-  !strings.Contains(page,`data-query="rows?schema=public&amp;table=mackna_fixture&amp;limit=20"`) {
+ if !strings.Contains(page,`id="refresh-metrics"`) ||
+  !strings.Contains(page,`data-view="rows"`) ||
+  !strings.Contains(page,`id="schema-select"`) {
   t.Fatal("buttons lack external JS event hooks")
  }
  csp:=html.Header().Get("Content-Security-Policy")
@@ -37,7 +38,7 @@ func TestPostgresLabCSPAndAssets(t *testing.T) {
  if js.Code!=200 {t.Fatalf("JS status=%d: %s",js.Code,js.Body.String())}
  if !strings.Contains(js.Header().Get("Content-Type"),"javascript"){t.Fatal("incorrect JavaScript MIME")}
  source:=js.Body.String()
- for _,required:=range []string{`addEventListener("click"`,`load("overview")`,`fetch("/api/v1/postgres/lab/"`} {
+ for _,required:=range []string{`addEventListener("click"`,`loadMetrics()`,`loadCatalog()`,`textContent`,`fetch("/api/v1/postgres/lab/"`} {
   if !strings.Contains(source,required){t.Fatalf("missing JS behavior %q",required)}
  }
 }
