@@ -29,15 +29,12 @@ jobs:
           echo "TAG=agent-v$VERSION" >> "$GITHUB_ENV"
       - name: Test and compile arm64 controller
         working-directory: backend
-        env:
-          GOOS: linux
-          GOARCH: arm64
-          CGO_ENABLED: "0"
         run: |
           go mod tidy
           go test ./...
+          go vet ./...
           mkdir -p ../dist
-          go build -trimpath -ldflags="-s -w -X main.buildCommit=$GITHUB_SHA" -o ../dist/mackna-agent-linux-arm64 .
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.buildCommit=$GITHUB_SHA" -o ../dist/mackna-agent-linux-arm64 .
       - name: Verify functional fingerprint and hash
         run: |
           python3 - <<'PY'
