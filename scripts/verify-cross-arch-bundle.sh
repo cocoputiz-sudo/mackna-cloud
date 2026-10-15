@@ -45,5 +45,5 @@ for marker in "$SOURCE_SHA" "postgres_lab.js" "script-src 'self'; connect-src 's
     exit 1
   }
 done
-printf 'PASS: verified %s ARM build, SHA256, embedded UI/monitoring, source=%s\n' "$ARCH" "$SOURCE_SHA"
+printf 'PASS: verified Linux %s build, SHA256, embedded UI/monitoring, source=%s\n' "$ARCH" "$SOURCE_SHA"
 echo "No installation or service changes were made."
