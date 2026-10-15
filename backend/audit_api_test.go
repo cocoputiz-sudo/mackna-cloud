@@ -2,6 +2,7 @@ package main
 
 import (
  "path/filepath"
+ "os"
  "strings"
  "testing"
 
@@ -26,4 +27,28 @@ func TestFixedReportsRequireAuthorization(t *testing.T){
  if w:=req(c,"GET","/api/v1/postgres/lab/report?name=connections","",false);w.Code!=401{t.Fatalf("unauthorized report: %d",w.Code)}
  t.Setenv("MACKNA_PG_LAB_ENABLED","0")
  if w:=req(c,"GET","/api/v1/postgres/lab/report?name=connections",reader,false);w.Code!=404{t.Fatalf("disabled lab accepted: %d",w.Code)}
+}
+
+func TestFixedReportHTTPRealPostgres(t *testing.T){
+ dsn:=os.Getenv("MACKNA_LAB_DSN")
+ if dsn==""{t.Skip("CI PostgreSQL 16 not connected")}
+ t.Setenv("MACKNA_PG_LAB_ENABLED","1")
+ t.Setenv("MACKNA_PG_LAB_DSN",dsn)
+ c,reader,_:=setup(t)
+ for _,name:=range []string{"connections","table-stats","index-stats","locks","database-stats","settings","extensions"}{
+  route:="/api/v1/postgres/lab/report?name="+name
+  resp:=req(c,"GET",route,reader,false)
+  if resp.Code!=200 || !strings.Contains(resp.Body.String(),"\"columns\"") {
+   t.Fatalf("%s: HTTP %d %s",route,resp.Code,resp.Body.String())
+  }
+ }
+ for _,route:=range []string{
+  "/api/v1/postgres/lab/report?name=secret",
+  "/api/v1/postgres/lab/report?name=connections%3BDROP+TABLE+x",
+ }{
+  resp:=req(c,"GET",route,reader,false)
+  if resp.Code!=404{t.Fatalf("unknown report accepted: %d %s",resp.Code,resp.Body.String())}
+ }
+ resp:=req(c,"GET","/api/v1/postgres/lab/report?name=connections&sql=SELECT+1",reader,false)
+ if resp.Code!=400{t.Fatalf("unexpected report parameters accepted: %d",resp.Code)}
 }
