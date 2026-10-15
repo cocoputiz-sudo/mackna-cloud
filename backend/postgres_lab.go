@@ -63,6 +63,9 @@ func (c *controller) servePostgresLab(w http.ResponseWriter,r *http.Request){
  case "foreign-keys":
   if !queryOnly(q,"schema","table")||!q.Has("table"){jsonResponse(w,400,map[string]string{"error":"invalid_query"});return}
   result,err=reader.ForeignKeys(ctx,q.Get("schema"),q.Get("table"))
+ case "report":
+  if !queryOnly(q,"name")||!q.Has("name"){jsonResponse(w,400,map[string]string{"error":"invalid_report_query"});return}
+  result,err=reader.NamedReport(ctx,q.Get("name"))
  case "rows":
   if !queryOnly(q,"schema","table","limit","after")||!q.Has("table"){jsonResponse(w,400,map[string]string{"error":"invalid_query"});return}
   limit:=100
@@ -74,6 +77,7 @@ func (c *controller) servePostgresLab(w http.ResponseWriter,r *http.Request){
   jsonResponse(w,404,map[string]string{"error":"not_found"});return
  }
  if err!=nil{
+  if errors.Is(err,postgres.ErrUnknownReport){jsonResponse(w,404,map[string]string{"error":"unknown_report"});return}
   status:=http.StatusBadGateway
   if errors.Is(err,context.DeadlineExceeded){status=http.StatusGatewayTimeout}
   jsonResponse(w,status,map[string]string{"error":"postgres_query_failed"});return

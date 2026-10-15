@@ -21,6 +21,7 @@ import (
  "syscall"
  "time"
 
+ "github.com/cocoputiz-sudo/mackna-cloud/backend/internal/audit"
  "github.com/cocoputiz-sudo/mackna-cloud/backend/internal/auth"
  "github.com/cocoputiz-sudo/mackna-cloud/backend/internal/gate"
 )
@@ -118,6 +119,7 @@ func readSystem()(systemInfo,error){
 }
 
 type controller struct {
+ Audit *audit.Log
  Tokens *auth.Store
  HTTP *http.Client
  System func()(systemInfo,error)
@@ -183,6 +185,10 @@ func secureHeaders(w http.ResponseWriter){
  h.Set("Referrer-Policy","no-referrer")
  h.Set("Content-Security-Policy","default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
 }
+func (c *controller) logAudit(r *http.Request,tokenID,action string,status int){
+ if c.Audit==nil{return}
+ if err:=c.Audit.Write(audit.Event{Action:action,TokenID:tokenID,Path:r.URL.Path,Status:status});err!=nil{log.Printf("audit trail failed: %v",err)}
+}
 func (c *controller) ServeHTTP(w http.ResponseWriter,r *http.Request){
  secureHeaders(w)
  if r.Method!="GET"{w.Header().Set("Allow","GET");jsonResponse(w,405,map[string]string{"error":"method_not_allowed"});return}
@@ -195,16 +201,27 @@ func (c *controller) ServeHTTP(w http.ResponseWriter,r *http.Request){
  }
  scope:=auth.Read
  if strings.HasSuffix(r.URL.Path,"/logs"){scope=auth.Logs}
- if r.URL.Path=="/api/v1/audit"{scope=auth.Admin}
+ if r.URL.Path=="/api/v1/audit"||r.URL.Path=="/audit"||r.URL.Path=="/audit.js"{scope=auth.Admin}
  tok,ok:=c.authorized(r,scope)
  if !ok{
-  if r.URL.Path=="/" || r.URL.Path=="/projects" || r.URL.Path=="/projects/view" || r.URL.Path=="/services/view" || r.URL.Path=="/postgres/lab" || r.URL.Path=="/postgres/lab.js" {w.Header().Set("WWW-Authenticate",`Basic realm="MackNa Cloud", charset="UTF-8"`)}
+  if r.URL.Path=="/" || r.URL.Path=="/projects" || r.URL.Path=="/projects/view" || r.URL.Path=="/services/view" || r.URL.Path=="/postgres/lab" || r.URL.Path=="/postgres/lab.js" || r.URL.Path=="/audit" || r.URL.Path=="/audit.js" {w.Header().Set("WWW-Authenticate",`Basic realm="MackNa Cloud", charset="UTF-8"`)}
   jsonResponse(w,401,map[string]string{"error":"unauthorized"})
   log.Printf("AUDIT %s",auditLine("auth_denied",r,"",401))
+  if strings.HasPrefix(r.URL.Path,"/api/v1/postgres/lab/")||r.URL.Path=="/api/v1/audit"{c.logAudit(r,"","auth_denied",401)}
   return
  }
  log.Printf("AUDIT %s",auditLine("api_access",r,tok.ID,200))
  switch r.URL.Path{
+ case "/audit","/audit.js":
+  c.serveAuditAsset(w,r)
+ case "/api/v1/audit":
+  if c.Audit==nil{jsonResponse(w,503,map[string]string{"error":"audit_unavailable"});return}
+  if !queryOnly(r.URL.Query(),"limit"){jsonResponse(w,400,map[string]string{"error":"invalid_query"});return}
+  limit:=50
+  if r.URL.Query().Has("limit"){var err error;limit,err=strconv.Atoi(r.URL.Query().Get("limit"));if err!=nil||limit<1||limit>100{jsonResponse(w,400,map[string]string{"error":"invalid_limit"});return}}
+  entries,err:=c.Audit.Tail(limit)
+  if err!=nil{jsonResponse(w,503,map[string]string{"error":"audit_unavailable"});return}
+  jsonResponse(w,200,map[string]any{"entries":entries})
  case "/postgres/lab":
   c.servePostgresLabPage(w,r)
  case "/postgres/lab.js":
@@ -229,7 +246,7 @@ func (c *controller) ServeHTTP(w http.ResponseWriter,r *http.Request){
    Node string;Info systemInfo;SystemOK bool;DockerOK bool;Containers []containerInfo;Version string
   }{"Node 01",info,errSys==nil,errDock==nil,containers,version});err!=nil{log.Printf("render error: %v",err)}
  default:
-  if strings.HasPrefix(r.URL.Path,"/api/v1/postgres/lab/") {c.servePostgresLab(w,r);return}
+  if strings.HasPrefix(r.URL.Path,"/api/v1/postgres/lab/") {c.logAudit(r,tok.ID,"pg_lab_read_attempt",0);c.servePostgresLab(w,r);return}
   const prefix="/api/v1/containers/"
   if !strings.HasPrefix(r.URL.Path,prefix){jsonResponse(w,404,map[string]string{"error":"not_found"});return}
   sub:=strings.TrimPrefix(r.URL.Path,prefix)
@@ -299,8 +316,10 @@ func main(){
  case "serve":
   socket:=os.Getenv("MACKNA_GATE_SOCKET")
   if socket==""{socket="/run/mackna-gate/docker-ro.sock"}
+  ctrl:=newController(tokenStore,socket)
+  if trail,err:=audit.Open(data+"/audit.jsonl",2<<20);err!=nil{log.Printf("audit log not available: %v",err)}else{ctrl.Audit=trail;defer trail.Close()}
   server:=&http.Server{
-   Addr:listenAddress,Handler:newController(tokenStore,socket),
+   Addr:listenAddress,Handler:ctrl,
    ReadHeaderTimeout:5*time.Second,WriteTimeout:20*time.Second,IdleTimeout:30*time.Second,MaxHeaderBytes:8192,
   }
   log.Printf("MackNa controller v%s on %s (SSH tunnel only)",version,listenAddress)

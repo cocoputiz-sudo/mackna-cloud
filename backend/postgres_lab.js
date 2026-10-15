@@ -48,8 +48,8 @@ async function loadMetrics(){
  try{renderMetrics(await api("overview"));status("metrics-status","Métricas atualizadas.");}
  catch(e){status("metrics-status","Falha ao carregar métricas: "+e.message,true);}
 }
-function renderTable(columns,rows){
- const area=$("catalog-results");clear(area);
+function renderTable(columns,rows,target="catalog-results"){
+ const area=$(target);clear(area);
  if(!rows.length){empty(area,"Nenhum resultado para esta consulta.");return;}
  const wrap=document.createElement("div");wrap.className="table-scroll";
  const table=document.createElement("table"),thead=document.createElement("thead"),tr=document.createElement("tr");
@@ -168,6 +168,21 @@ $("next-page").addEventListener("click",()=>{
  if(state.nextKey===null||state.nextKey===undefined)return;
  state.cursors[state.page+1]=state.nextKey;state.page++;showView();
 });
+
+async function loadReport() {
+ const name=$("report-select").value;
+ status("report-status","Consultando relatório...");
+ try{
+  const data=await api("report?"+new URLSearchParams({name}));
+  renderTable(data.columns||[],data.rows||[],"report-results");
+  status("report-status",(data.rows||[]).length+" linha(s) apresentadas.");
+ }catch(error){
+  empty($("report-results"),"Não foi possível consultar o relatório.");
+  status("report-status","Falha ao consultar: "+error.message,true);
+ }
+}
+$("refresh-report").addEventListener("click",loadReport);
+
 // The backend deliberately allows only one lab query at a time.
 // Serialize initial requests to avoid spurious HTTP 429 (lab_busy).
 (async () => { await loadMetrics(); await loadCatalog(); })();
