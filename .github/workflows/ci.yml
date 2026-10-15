@@ -64,6 +64,9 @@ jobs:
               "CSP supports own scripts and API": b"script-src 'self'; connect-src 'self'" in exe,
               "old inline event handlers absent": b'onclick="load' not in exe,
               "source SHA stamped in binary": os.environ["SOURCE_SHA"].encode() in exe,
+              "advanced read-only reports embedded": b"report_row_limit_exceeded" in exe and b"index-stats" in exe,
+              "admin audit viewer embedded": b'<script src="/audit.js" defer></script>' in exe,
+              "audited access route embedded": b"/api/v1/audit" in exe,
           }
           for name, ok in expected.items():
               print(("PASS" if ok else "FAIL") + ": " + name)
@@ -79,7 +82,7 @@ jobs:
       - name: Upload binaries and service scripts
         uses: actions/upload-artifact@v4
         with:
-          name: mackna-pr4-arm64-${{ github.run_id }}-${{ github.run_attempt }}
+          name: mackna-v1-safe-arm64-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             dist/*
             deploy/systemd/mackna-agent.service
