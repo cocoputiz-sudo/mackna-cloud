@@ -72,6 +72,9 @@ jobs:
           sha256sum dist/mackna-agent-linux-arm64 dist/mackna-gate-linux-arm64 > dist/SHA256SUMS
           printf 'source_sha=%s\nworkflow_run=%s\nworkflow_attempt=%s\n' "$SOURCE_SHA" "$RUN_ID" "$RUN_ATTEMPT" > dist/BUILD_INFO.txt
           cat dist/SHA256SUMS dist/BUILD_INFO.txt
+      - name: Validate the complete installable artifact without touching services
+        working-directory: .
+        run: bash scripts/install-verified-bundle.sh . --verify-only
       - name: Upload binaries and service scripts
         uses: actions/upload-artifact@v4
         with:
@@ -85,5 +88,6 @@ jobs:
             scripts/probe-node01.sh
             scripts/activate-pg-lab.sh
             scripts/update-agent-release.sh
+            scripts/install-verified-bundle.sh
           retention-days: 14
           if-no-files-found: error
