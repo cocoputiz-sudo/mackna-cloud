@@ -20,6 +20,7 @@ jobs:
           cache-dependency-path: backend/go.mod
       - name: Test code on native AMD64 runner
         run: |
+          go mod tidy
           go test -race -count=1 ./...
           go vet ./...
       - name: Check diagnostics and verifier syntax
