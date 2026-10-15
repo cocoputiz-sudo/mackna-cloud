@@ -35,7 +35,7 @@ cleanup() {
 }
 trap cleanup ERR EXIT
 [[ $(id -u) == 0 && $(uname -m) == aarch64 ]] || { echo "Exige root em ARM64" >&2; exit 1; }
-for bin in docker openssl systemctl curl mktemp grep sed; do command -v "$bin" >/dev/null || { echo "Dependência ausente: $bin" >&2; exit 1; }; done
+for bin in docker openssl systemctl curl mktemp grep sed seq sleep chmod chown mv rm mkdir; do command -v "$bin" >/dev/null || { echo "Dependência ausente: $bin" >&2; exit 1; }; done
 [[ -n "${MACKNA_TOKEN:-}" ]] || { echo "Informe MACKNA_TOKEN no ambiente; nunca no argumento do script" >&2; exit 1; }
 [[ ! -e "$DROPIN" && ! -e "$ENVFILE" ]] || { echo "Configuração já existe; não sobrescrevendo" >&2; exit 1; }
 [[ $(docker inspect -f '{{.HostConfig.NetworkMode}}' "$LAB") == none ]] || { echo "Lab não está em network none" >&2; exit 1; }
@@ -96,7 +96,7 @@ done
 response=$(printf 'header = "Authorization: Bearer %s"\n' "$MACKNA_TOKEN" |
  curl -fsS --max-time 18 -K - "$URL")
 # Validate returned JSON includes server version 16, not just HTTP 200.
-printf '%s' "$response" | grep -Eq '"version"[[:space:]]*:[[:space:]]*"16(\\.|")' || {
+printf '%s' "$response" | grep -Eq '"version"[[:space:]]*:[[:space:]]*"16([.]|")' || {
  echo "Overview não retornou PostgreSQL 16" >&2; exit 1;
 }
 complete=1
