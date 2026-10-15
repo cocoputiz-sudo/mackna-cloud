@@ -11,7 +11,7 @@ mode="${1:---check}"
 [[ "$mode" == "--check" || "$mode" == "--apply" || "$mode" == "--enable-auto" || "$mode" == "--disable-auto" ]] || {
  echo "Uso: $0 --check | --apply | --enable-auto | --disable-auto" >&2; exit 2;
 }
-[[ $(id -u) == 0 && $(uname -m) == aarch64 ]] || { echo "Exige root em Linux ARM64" >&2;exit 2; }
+[[ $(id -u) == 0 && $(uname -m) == aarch64 ]] || { echo "Exige root em Linux ARM64" >&2; exit 2; }
 if [[ "$mode" == "--enable-auto" ]]; then
  install -o root -g root -m 0755 "$0" /usr/local/sbin/mackna-agent-updater
  cat >/etc/systemd/system/mackna-agent-autoupdate.service <<'UNIT'
@@ -46,11 +46,11 @@ if [[ "$mode" == "--disable-auto" ]];then
  exit 0
 fi
 for bin in curl python3 sha256sum install mktemp cp mv rm systemctl flock;do
- command -v "$bin" >/dev/null || {echo "Dependência ausente: $bin" >&2;exit 2; }
+ command -v "$bin" >/dev/null || { echo "Dependência ausente: $bin" >&2; exit 2; }
 done
 # Prevent concurrent manual and timer attempts.
 exec 9>/run/mackna-agent-updater.lock
-flock -n 9 || {echo "Atualização já em execução" >&2;exit 1;}
+flock -n 9 || { echo "Atualização já em execução" >&2; exit 1; }
 work=$(mktemp -d /tmp/mackna-release.XXXXXXXX)
 staged=
 backup=
@@ -112,15 +112,15 @@ PY
 )
 echo "Release validada: $tag · source=$release_sha"
 if [[ -x "$AGENT" ]] && cmp -s "$AGENT" "$work/mackna-agent-linux-arm64";then
- echo "MackNa Agent já corresponde ao release. Nenhuma alteração.";done_ok=1;exit 0
+ echo "MackNa Agent já corresponde ao release. Nenhuma alteração.";done_ok=1; exit 0
 fi
 if [[ "$mode" == "--check" ]];then
  echo "Nova atualização disponível. Nenhum serviço foi reiniciado."
  echo "Para atualizar manualmente: sudo /usr/local/sbin/mackna-agent-updater --apply"
- done_ok=1;exit 0
+ done_ok=1; exit 0
 fi
-systemctl is-active --quiet "$SERVICE" || {echo "Agent inativo: atualização recusada" >&2;exit 1;}
-curl -fsS --max-time 3 "$HEALTH" >/dev/null || {echo "Health pré-update falhou" >&2;exit 1;}
+systemctl is-active --quiet "$SERVICE" || { echo "Agent inativo: atualização recusada" >&2; exit 1; }
+curl -fsS --max-time 3 "$HEALTH" >/dev/null || { echo "Health pré-update falhou" >&2; exit 1; }
 backup="$work/previous-agent"
 cp -p "$AGENT" "$backup"
 staged=$(mktemp /usr/local/bin/.mackna-agent.next.XXXXXXXX)
@@ -140,7 +140,7 @@ PY
  fi
  sleep 1
 done
-[[ "$health_ok" == 1 ]] || {echo "Agent atualizado não confirmou commit/health" >&2;exit 1;}
+[[ "$health_ok" == 1 ]] || { echo "Agent atualizado não confirmou commit/health" >&2; exit 1; }
 install -o root -g root -m 0755 "$backup" "$AGENT.previous"
 done_ok=1
 echo "MackNa Agent atualizado para $tag ($release_sha). IMORTAIS, Gate e PostgreSQL não foram reiniciados."
