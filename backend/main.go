@@ -29,6 +29,8 @@ import (
 var dashboardHTML embed.FS
 
 const version = "0.3.0"
+// Injected by CI at build time so deployed binaries can be identified reliably.
+var buildCommit = "dev"
 const listenAddress = "127.0.0.1:8090"
 var page = template.Must(template.New("dashboard.html").Funcs(template.FuncMap{
  "human": humanBytes,
@@ -188,7 +190,7 @@ func (c *controller) ServeHTTP(w http.ResponseWriter,r *http.Request){
   ctx,cancel:=context.WithTimeout(r.Context(),3*time.Second);defer cancel()
   _,status,err:=c.call(ctx,"/_ping")
   healthy:=err==nil&&status==200
-  if healthy{jsonResponse(w,200,map[string]any{"ok":true,"docker":true,"version":version})}else{jsonResponse(w,503,map[string]any{"ok":false,"docker":false,"version":version})}
+  if healthy{jsonResponse(w,200,map[string]any{"ok":true,"docker":true,"version":version,"build":buildCommit})}else{jsonResponse(w,503,map[string]any{"ok":false,"docker":false,"version":version,"build":buildCommit})}
   return
  }
  scope:=auth.Read
