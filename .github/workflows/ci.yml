@@ -29,9 +29,11 @@ jobs:
         run: go vet ./...
       - name: Go coverage
         run: go test -cover ./...
-      - name: Bash syntax checks
+      - name: Bash and JavaScript syntax checks
         working-directory: .
-        run: bash -n scripts/*.sh
+        run: |
+          bash -n scripts/*.sh
+          node --check backend/postgres_lab.js
       - name: Cross-compile controller and gate for ARM64
         env:
           GOOS: linux
