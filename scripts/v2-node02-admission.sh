@@ -41,9 +41,16 @@ if command -v docker >/dev/null;then
 else
  echo 'Docker ainda não instalado: permitido para um nó novo (instalação futura separada)'
 fi
-if command -v ss >/dev/null;then
+if ! command -v ss >/dev/null;then
+ echo 'BLOQUEADO: ss não disponível para verificar portas';fail=1
+else
  for port in 80 443 8090 8091 8093;do
-  if ss -H -ltn "( sport = :$port )" 2>/dev/null | grep -q .;then
+  sockets=$(ss -H -ltn "( sport = :$port )" 2>/dev/null) || {
+   echo "BLOQUEADO: não foi possível inspecionar a porta $port"
+   fail=1
+   continue
+  }
+  if [[ -n "$sockets" ]];then
    echo "BLOQUEADO: porta TCP $port já em uso";fail=1
   fi
  done
