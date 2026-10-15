@@ -42,7 +42,7 @@ func TestPostgresLabCSPAndAssets(t *testing.T) {
  }
 }
 
-func TestPostgresLabDisabledByDefault(t *testing.T){
+func TestPostgresLabScriptDisabledByDefault(t *testing.T){
  t.Setenv("MACKNA_PG_LAB_ENABLED","0")
  c,read,_:=setup(t)
  for _,path:=range []string{"/postgres/lab","/postgres/lab.js"}{
