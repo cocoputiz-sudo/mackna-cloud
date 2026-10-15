@@ -69,7 +69,7 @@ jobs:
           if not all(expected.values()):
               sys.exit("ARM64 artifact failed functionality fingerprint; refusing to publish")
           PY
-          sha256sum dist/mackna-agent-linux-arm64 dist/mackna-gate-linux-arm64 > dist/SHA256SUMS
+          (cd dist && sha256sum mackna-agent-linux-arm64 mackna-gate-linux-arm64 > SHA256SUMS)
           printf 'source_sha=%s\nworkflow_run=%s\nworkflow_attempt=%s\n' "$SOURCE_SHA" "$RUN_ID" "$RUN_ATTEMPT" > dist/BUILD_INFO.txt
           cat dist/SHA256SUMS dist/BUILD_INFO.txt
       - name: Validate the complete installable artifact without touching services
