@@ -168,5 +168,6 @@ $("next-page").addEventListener("click",()=>{
  if(state.nextKey===null||state.nextKey===undefined)return;
  state.cursors[state.page+1]=state.nextKey;state.page++;showView();
 });
-loadMetrics();
-loadCatalog();
+// The backend deliberately allows only one lab query at a time.
+// Serialize initial requests to avoid spurious HTTP 429 (lab_busy).
+(async () => { await loadMetrics(); await loadCatalog(); })();
