@@ -24,7 +24,6 @@ func TestPostgresLabCSPAndAssets(t *testing.T) {
  for _,forbidden:=range []string{"<script>","onclick=", "onload="} {
   if strings.Contains(page,forbidden){t.Fatalf("CSP-incompatible inline code: %q",forbidden)}
  }
- }
  if !strings.Contains(page,`data-query="overview"`) ||
   !strings.Contains(page,`data-query="rows?schema=public&amp;table=mackna_fixture&amp;limit=20"`) {
   t.Fatal("buttons lack external JS event hooks")
