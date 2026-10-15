@@ -1,0 +1,42 @@
+name: PostgreSQL Lab Integration
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lab:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci-lab-postgres
+          POSTGRES_DB: mackna_lab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mackna_lab"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Provision isolated lab
+        env:
+          PGPASSWORD: ci-lab-postgres
+        run: psql -h 127.0.0.1 -U postgres -d mackna_lab -v ON_ERROR_STOP=1 -f postgres/lab/setup.sql
+      - name: Download Go dependencies and run integration
+        working-directory: backend
+        env:
+          MACKNA_LAB_DSN: postgres://mackna_reader:ci-lab-reader@127.0.0.1:5432/mackna_lab?sslmode=disable
+        run: |
+          go mod tidy
+          go test -race -count=1 ./...
+          go vet ./...
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /tmp/mackna-agent-arm64 .

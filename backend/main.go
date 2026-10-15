@@ -29,6 +29,8 @@ import (
 var dashboardHTML embed.FS
 
 const version = "0.3.0"
+// Injected by CI at build time so deployed binaries can be identified reliably.
+var buildCommit = "dev"
 const listenAddress = "127.0.0.1:8090"
 var page = template.Must(template.New("dashboard.html").Funcs(template.FuncMap{
  "human": humanBytes,
@@ -179,7 +181,7 @@ func secureHeaders(w http.ResponseWriter){
  h.Set("X-Content-Type-Options","nosniff")
  h.Set("X-Frame-Options","DENY")
  h.Set("Referrer-Policy","no-referrer")
- h.Set("Content-Security-Policy","default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
+ h.Set("Content-Security-Policy","default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
 }
 func (c *controller) ServeHTTP(w http.ResponseWriter,r *http.Request){
  secureHeaders(w)
@@ -188,7 +190,7 @@ func (c *controller) ServeHTTP(w http.ResponseWriter,r *http.Request){
   ctx,cancel:=context.WithTimeout(r.Context(),3*time.Second);defer cancel()
   _,status,err:=c.call(ctx,"/_ping")
   healthy:=err==nil&&status==200
-  if healthy{jsonResponse(w,200,map[string]any{"ok":true,"docker":true,"version":version})}else{jsonResponse(w,503,map[string]any{"ok":false,"docker":false,"version":version})}
+  if healthy{jsonResponse(w,200,map[string]any{"ok":true,"docker":true,"version":version,"build":buildCommit})}else{jsonResponse(w,503,map[string]any{"ok":false,"docker":false,"version":version,"build":buildCommit})}
   return
  }
  scope:=auth.Read
@@ -196,13 +198,17 @@ func (c *controller) ServeHTTP(w http.ResponseWriter,r *http.Request){
  if r.URL.Path=="/api/v1/audit"{scope=auth.Admin}
  tok,ok:=c.authorized(r,scope)
  if !ok{
-  if r.URL.Path=="/" || r.URL.Path=="/projects" || r.URL.Path=="/projects/view" || r.URL.Path=="/services/view" {w.Header().Set("WWW-Authenticate",`Basic realm="MackNa Cloud", charset="UTF-8"`)}
+  if r.URL.Path=="/" || r.URL.Path=="/projects" || r.URL.Path=="/projects/view" || r.URL.Path=="/services/view" || r.URL.Path=="/postgres/lab" || r.URL.Path=="/postgres/lab.js" {w.Header().Set("WWW-Authenticate",`Basic realm="MackNa Cloud", charset="UTF-8"`)}
   jsonResponse(w,401,map[string]string{"error":"unauthorized"})
   log.Printf("AUDIT %s",auditLine("auth_denied",r,"",401))
   return
  }
  log.Printf("AUDIT %s",auditLine("api_access",r,tok.ID,200))
  switch r.URL.Path{
+ case "/postgres/lab":
+  c.servePostgresLabPage(w,r)
+ case "/postgres/lab.js":
+  c.servePostgresLabScript(w,r)
  case "/projects", "/projects/view", "/services/view":
   c.serveConsole(w,r,tok)
  case "/api/v1/system","/api/v1/node":
@@ -223,6 +229,7 @@ func (c *controller) ServeHTTP(w http.ResponseWriter,r *http.Request){
    Node string;Info systemInfo;SystemOK bool;DockerOK bool;Containers []containerInfo;Version string
   }{"Node 01",info,errSys==nil,errDock==nil,containers,version});err!=nil{log.Printf("render error: %v",err)}
  default:
+  if strings.HasPrefix(r.URL.Path,"/api/v1/postgres/lab/") {c.servePostgresLab(w,r);return}
   const prefix="/api/v1/containers/"
   if !strings.HasPrefix(r.URL.Path,prefix){jsonResponse(w,404,map[string]string{"error":"not_found"});return}
   sub:=strings.TrimPrefix(r.URL.Path,prefix)

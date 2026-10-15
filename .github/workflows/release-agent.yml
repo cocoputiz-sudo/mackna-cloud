@@ -1,0 +1,65 @@
+name: Publish MackNa Agent ARM64 release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Stable version (e.g. 0.3.1)"
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: mackna-agent-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.mod
+      - name: Validate release version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid version" >&2; exit 1; }
+          echo "TAG=agent-v$VERSION" >> "$GITHUB_ENV"
+      - name: Test and compile arm64 controller
+        working-directory: backend
+        run: |
+          go mod tidy
+          go test ./...
+          go vet ./...
+          mkdir -p ../dist
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.buildCommit=$GITHUB_SHA" -o ../dist/mackna-agent-linux-arm64 .
+      - name: Verify functional fingerprint and hash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os,sys
+          payload=Path("dist/mackna-agent-linux-arm64").read_bytes()
+          features=[
+            b'<script src="/postgres/lab.js" defer></script>',
+            b'postgres_lab.js',
+            b'script-src \'self\'; connect-src \'self\'',
+            os.environ["GITHUB_SHA"].encode(),
+          ]
+          if any(feature not in payload for feature in features):
+            sys.exit("Binary fingerprint verification failed")
+          PY
+          (cd dist && sha256sum mackna-agent-linux-arm64 > SHA256SUMS)
+          printf 'source_sha=%s\n' "$GITHUB_SHA" > dist/BUILD_INFO.txt
+      - name: Publish manually approved release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1;then
+            echo "Release already exists, refusing overwrite" >&2
+            exit 1
+          fi
+          gh release create "$TAG" dist/mackna-agent-linux-arm64 dist/SHA256SUMS dist/BUILD_INFO.txt \
+            --target "$GITHUB_SHA" --title "MackNa Agent $TAG" \
+            --notes "Linux ARM64. Somente MackNa Agent. Build SHA está incluído no health e no manifesto."
