@@ -89,5 +89,6 @@ jobs:
             scripts/activate-pg-lab.sh
             scripts/update-agent-release.sh
             scripts/install-verified-bundle.sh
+            scripts/preflight-new-node.sh
           retention-days: 14
           if-no-files-found: error
