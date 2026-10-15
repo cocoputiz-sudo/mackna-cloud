@@ -32,7 +32,7 @@ jobs:
       - name: Bash and JavaScript syntax checks
         working-directory: .
         run: |
-          bash -n scripts/*.sh
+          for script in scripts/*.sh; do bash -n "$script"; done
           node --check backend/postgres_lab.js
       - name: Cross-compile controller and gate for ARM64
         env:
