@@ -84,5 +84,6 @@ jobs:
             scripts/upgrade-agent.sh
             scripts/probe-node01.sh
             scripts/activate-pg-lab.sh
+            scripts/update-agent-release.sh
           retention-days: 14
           if-no-files-found: error
