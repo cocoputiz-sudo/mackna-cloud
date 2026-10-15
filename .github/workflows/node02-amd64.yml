@@ -1,0 +1,63 @@
+name: MackNa Node 02 — AMD64 candidate
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  amd64:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.mod
+      - name: Test code on native AMD64 runner
+        run: |
+          go test -race -count=1 ./...
+          go vet ./...
+      - name: Check diagnostics and verifier syntax
+        working-directory: .
+        run: |
+          bash -n scripts/verify-cross-arch-bundle.sh
+          bash -n scripts/preflight-new-node.sh
+          node --check backend/postgres_lab.js
+          node --check backend/audit.js
+      - name: Build MackNa controller and Gate for Linux AMD64
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mkdir -p ../dist-amd64
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
+            -ldflags="-s -w -X main.buildCommit=$SOURCE_SHA" \
+            -o ../dist-amd64/mackna-agent-linux-amd64 .
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
+            -ldflags="-s -w" -o ../dist-amd64/mackna-gate-linux-amd64 ./cmd/gate
+      - name: Checksum manifest and verify both executable architectures
+        working-directory: .
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          (cd dist-amd64 && sha256sum mackna-agent-linux-amd64 mackna-gate-linux-amd64 > SHA256SUMS)
+          printf 'source_sha=%s\nworkflow_run=%s\nworkflow_attempt=%s\n' \
+            "$SOURCE_SHA" "$RUN_ID" "$RUN_ATTEMPT" > dist-amd64/BUILD_INFO.txt
+          bash scripts/verify-cross-arch-bundle.sh dist-amd64 amd64
+      - name: Upload isolated AMD64 build candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: mackna-node02-amd64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist-amd64/*
+            scripts/preflight-new-node.sh
+            scripts/verify-cross-arch-bundle.sh
+            docs/node02-migration-plan.md
+          retention-days: 14
+          if-no-files-found: error
