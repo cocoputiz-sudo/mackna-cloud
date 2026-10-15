@@ -2,6 +2,7 @@ package postgres
 
 import (
  "context"
+ "errors"
  "fmt"
  "os"
  "testing"
@@ -39,4 +40,26 @@ func TestLabReadOnly(t *testing.T){
  }{
   t.Run(name,func(t *testing.T){if _,err:=conn.Exec(ctx,query);err==nil{t.Fatalf("%s unexpectedly succeeded",name)}})
  }
+}
+
+func TestNamedReportsAreFixedAndReadOnly(t *testing.T) {
+ if len(ReportNames())!=7 { t.Fatalf("unexpected report list: %v",ReportNames()) }
+ for _,bad:=range []string{"","SELECT pg_sleep(5)","connections; DROP TABLE mackna_fixture","activity","roles","../../etc/passwd"}{
+  if _,ok:=safeReportSQL[bad];ok {t.Fatalf("untrusted report key accepted: %q",bad)}
+ }
+ dsn:=os.Getenv("MACKNA_LAB_DSN")
+ if dsn==""{t.Skip("lab not configured")}
+ ctx,cancel:=context.WithTimeout(context.Background(),40*time.Second);defer cancel()
+ reader,err:=Open(ctx,dsn)
+ if err!=nil{t.Fatal(err)}
+ defer reader.Close()
+ for _,name:=range ReportNames(){
+  t.Run(name,func(t *testing.T){
+   res,err:=reader.NamedReport(ctx,name)
+   if err!=nil{t.Fatalf("report %s: %v",name,err)}
+   if len(res.Columns)==0{t.Fatal("missing report columns")}
+   if len(res.Rows)>100{t.Fatal("report unbounded")}
+  })
+ }
+ if _,err=reader.NamedReport(ctx,"SELECT 1");!errors.Is(err,ErrUnknownReport){t.Fatalf("unknown query was not rejected: %v",err)}
 }
