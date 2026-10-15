@@ -89,6 +89,26 @@ footer{margin-top:20px;color:#9facc0;font-size:.83rem}
   <button type="button" id="next-page" disabled>Próxima →</button>
  </div>
 </section>
+<section class="panel" aria-labelledby="monitor-title">
+ <h2 id="monitor-title">Monitoramento avançado</h2>
+ <p class="muted">Relatórios predefinidos e somente leitura. Não exibem SQL das sessões, credenciais ou dados de produção.</p>
+ <div class="toolbar">
+  <label for="report-select">Relatório
+   <select id="report-select" aria-label="Selecionar relatório">
+    <option value="connections">Conexões</option>
+    <option value="table-stats">Estatísticas de tabelas</option>
+    <option value="index-stats">Índices e utilização</option>
+    <option value="locks">Bloqueios agrupados</option>
+    <option value="database-stats">Estatísticas do banco</option>
+    <option value="settings">Parâmetros seguros</option>
+    <option value="extensions">Extensões instaladas</option>
+   </select>
+  </label>
+  <button type="button" id="refresh-report">Consultar relatório</button>
+ </div>
+ <div id="report-status" role="status" class="status">Selecione o relatório para consultar.</div>
+ <div id="report-results" aria-live="polite"></div>
+</section>
 <footer>Consultas limitadas a 15 segundos, 1.000 linhas e 5 MiB. Navegação somente por tabelas com chave primária simples. Acesso via túnel SSH.</footer>
 <script src="/postgres/lab.js" defer></script>
 </body>
