@@ -34,6 +34,7 @@ jobs:
         run: |
           for script in scripts/*.sh; do bash -n "$script"; done
           node --check backend/postgres_lab.js
+          node --check backend/audit.js
       - name: Cross-compile controller and gate for ARM64
         env:
           GOOS: linux
