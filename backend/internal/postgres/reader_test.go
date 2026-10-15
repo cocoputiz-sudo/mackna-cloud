@@ -2,6 +2,7 @@ package postgres
 
 import (
  "context"
+ "fmt"
  "os"
  "testing"
  "time"
@@ -23,6 +24,9 @@ func TestLabReadOnly(t *testing.T){
  _,err=reader.ForeignKeys(ctx,"public","mackna_fixture");if err!=nil{t.Fatal(err)}
  page,err:=reader.Rows(ctx,"public","mackna_fixture",nil,1);if err!=nil||len(page.Rows)!=1||page.NextKey==nil{t.Fatalf("first page: %+v %v",page,err)}
  page2,err:=reader.Rows(ctx,"public","mackna_fixture",page.NextKey,1);if err!=nil||len(page2.Rows)!=1{t.Fatalf("second page: %+v %v",page2,err)}
+ cursorFromHTTP:=fmt.Sprint(page.NextKey)
+ pageHTTP,err:=reader.Rows(ctx,"public","mackna_fixture",cursorFromHTTP,1)
+ if err!=nil||len(pageHTTP.Rows)!=1{t.Fatalf("HTTP string cursor: %+v %v",pageHTTP,err)}
  if _,err=reader.Rows(ctx,"public","mackna_fixture",nil,1001);err==nil{t.Fatal("limit must be rejected")}
  conn,err:=pgx.Connect(ctx,dsn);if err!=nil{t.Fatal(err)}
  defer conn.Close(ctx)
