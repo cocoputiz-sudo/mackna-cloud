@@ -37,15 +37,43 @@ jobs:
           GOOS: linux
           GOARCH: arm64
           CGO_ENABLED: "0"
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           mkdir -p ../dist
-          go build -trimpath -ldflags="-s -w" -o ../dist/mackna-agent-linux-arm64 .
+          go build -trimpath -ldflags="-s -w -X main.buildCommit=$SOURCE_SHA" -o ../dist/mackna-agent-linux-arm64 .
           go build -trimpath -ldflags="-s -w" -o ../dist/mackna-gate-linux-arm64 ./cmd/gate
           file ../dist/mackna-*-linux-arm64
+      - name: Verify actual ARM64 release bytes and write manifest
+        working-directory: .
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, sys
+          exe = Path("dist/mackna-agent-linux-arm64").read_bytes()
+          expected = {
+              "external script present": b'<script src="/postgres/lab.js" defer></script>' in exe,
+              "embedded JS asset present": b"postgres_lab.js" in exe,
+              "button listeners present": b'addEventListener("click"' in exe,
+              "CSP supports own scripts and API": b"script-src 'self'; connect-src 'self'" in exe,
+              "old inline event handlers absent": b'onclick="load' not in exe,
+              "source SHA stamped in binary": os.environ["SOURCE_SHA"].encode() in exe,
+          }
+          for name, ok in expected.items():
+              print(("PASS" if ok else "FAIL") + ": " + name)
+          if not all(expected.values()):
+              sys.exit("ARM64 artifact failed functionality fingerprint; refusing to publish")
+          PY
+          sha256sum dist/mackna-agent-linux-arm64 dist/mackna-gate-linux-arm64 > dist/SHA256SUMS
+          printf 'source_sha=%s\nworkflow_run=%s\nworkflow_attempt=%s\n' "$SOURCE_SHA" "$RUN_ID" "$RUN_ATTEMPT" > dist/BUILD_INFO.txt
+          cat dist/SHA256SUMS dist/BUILD_INFO.txt
       - name: Upload binaries and service scripts
         uses: actions/upload-artifact@v4
         with:
-          name: mackna-pr4-node01-arm64
+          name: mackna-pr4-arm64-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             dist/*
             deploy/systemd/mackna-agent.service
