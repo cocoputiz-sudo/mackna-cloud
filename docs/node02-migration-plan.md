@@ -7,16 +7,50 @@
 | Nó | Arquitetura | Capacidade conhecida | Papel |
 | --- | --- | --- | --- |
 | Node 01 (BTV11) | Linux ARM64/aarch64 | ~1,8 GiB RAM; ~13 GiB raiz; Amlogic S905X3 | Laboratório: validar autenticação, painel, API, limites, rollback e integração com um PostgreSQL descartável |
-| Node 02 (all-in-one) | **a confirmar**; provável Linux amd64/x86_64 | alvo ~32 GiB RAM e quatro núcleos; CPU exata e SSD a confirmar | Servidor principal candidato: hospedar MackNa e serviços isolados após homologação |
+| Node 02 (HP Omni 220-1100br) | Debian GNU/Linux 13 (Trixie), amd64/x86_64; GNOME 48/Wayland | **8 GiB RAM DDR3**, Intel Core i3-2100 (2 núcleos físicos / 4 threads, 3,1 GHz), SSD 120 GB conforme tela do sistema | Servidor compacto candidato: hospedar MackNa e serviços isolados após homologação |
 
 **Não inferir automaticamente que o novo equipamento é AMD64 ou já tem Linux.**
 O workflow `.github/workflows/node02-amd64.yml` produz **binários candidatos** de Agent + Gate para AMD64, sem instalar nada. O workflow ARM64 da BTV11 continua separado. O agente e o Gate são binários diferentes; não trocar o Gate atual em um teste de interface.
 
-## Requisitos sugeridos antes de definir o Node 02
+## Revisão de hardware real (15/10/2026)
+
+O all-in-one adquirido possui um **Intel i3-2100 Sandy Bridge, 2 núcleos / 4 threads**, memória DDR3 de **8 GB** e SSD de **120 GB**. É adequado para desenvolvimento funcional, PostgreSQL de laboratório e pequenas aplicações de baixa demanda; **não** deve ser tratado como máquina de 32 GiB com quatro núcleos físicos.
+
+A implementação do produto será independente dessa limitação: priorizar arquiteturas de `limits/quotas` configuráveis, fila de builds e instâncias de armazenamento isoladas. O perfil deste equipamento deve limitar a execução, não retirar funcionalidades do código.
+
+**Orçamento inicial indicativo, não configuração já aplicada:**
+
+| Área | Meta de memória na fase de laboratório |
+| --- | --- |
+| SO + cache de disco + margem | reservar aproximadamente 2–3 GiB |
+| MackNa Agent + Gate + Proxy | até ~512 MiB somados, a conferir após medição |
+| PostgreSQL de laboratório | teto inicial de 768 MiB–1 GiB |
+| Redis opcional | teto inicial de 128–256 MiB |
+| 1 app experimental Node/Go | teto inicial 256–512 MiB |
+| Builder isolado | teto temporário ~1 GiB, **somente 1 job por vez** |
+| Proteção contra picos | manter memória disponível e espaço livre em disco; parar testes ao degradar |
+
+Esses números **não** são uma garantia de capacidade. Estabelecer limites Docker/systemd após inspecionar consumo real e escolha do sistema operacional. Em armazenamento, **manter 15–20 GiB livres**; builds, cache, volumes PostgreSQL, WAL, imagens e arquivos temporários precisam de limpeza controlada. **Nunca guardar a única cópia do backup no SSD de 120 GB**.
+
+O i3-2100 não tem AES-NI nem AVX2, de acordo com a Intel. Compilar `GOAMD64=v1` para assegurar compatibilidade genérica x86-64; criptografia AES funcionará por software, com menos desempenho. Verificar imagens Docker de terceiros que dependam de extensões modernas.
+
+Antes da implantação, executar `bash scripts/node02-capacity-report.sh --report` e `bash scripts/v2-node02-admission.sh --check`. Ambos são **somente leitura**.
+
+### Identificação oficial da placa e memória
+
+A tela do Debian identificou **Hewlett-Packard 220-1100br** e Debian GNU/Linux 13 (Trixie) 64 bits. A ficha técnica original do fabricante para o **HP Omni 220-1100br, part number QE842AA#AC4**, especifica **máximo oficial de 8 GB DDR3-1333 em dois slots SO-DIMM**, **interface de rede Gigabit 10/100/1000** e **um único encaixe para armazenamento SATA**. Assim, o caminho de expansão da memória para 16 GB ou 32 GB não é suportado pela especificação oficial deste all-in-one, mesmo que o processador isoladamente tenha limite teórico maior.
+
+Fonte (ficha técnica HP, republicada): https://www.microsafe.com.br/pdf/microsafe_hp_qe842aa_omni_220_1100br_all-in-one.pdf
+
+O SSD de 120 GB instalado substituiu o HDD SATA de 500 GB da configuração original ou pertence a uma configuração modificada. Não comprar NVMe ou módulos de memória adicionais sem comprovar compatibilidade física. O upgrade mais útil é **SSD SATA 2,5" de 480/500 GB ou 1 TB**, confirmando montagem/conector; manter backup externo antes de substituir.
+
+Debian já funciona com GNOME/Wayland; não reinstalar nem remover o desktop agora. Primeiro configurar/validar SSH, Ethernet e backups. Depois avaliar `multi-user.target` e modo headless reversível para poupar recursos.
+
+## Requisitos sugeridos para expansão posterior
 - Processador x86-64 com virtualização e AES-NI, preferencialmente uma geração moderna; conferir modelo e desempenho sustentado.
-- SSD NVMe ou SATA com SMART e espaço utilizável; **500 GiB mínimo sugerido para laboratório de vários serviços; 1 TiB preferível se houver orçamento**. Planejar backups externos.
-- RAM 32 GiB, rede Ethernet cabeada, BIOS com power-on after AC loss, refrigeração adequada para 24/7.
-- Debian 13 amd64 instalado nativamente ou Ubuntu Server LTS suportado, sem host Docker dentro de uma VM para produção, salvo necessidade deliberada de virtualização.
+- O SSD atual de 120 GB permite laboratório leve. Para múltiplos projetos e bancos, **500 GB ou 1 TB de SSD** é uma expansão importante, condicionada à compatibilidade do all-in-one. Planejar backups externos.
+- RAM atual 8 GiB, **já no máximo oficial indicado pela HP**. Não planejar expansão para 16/32 GiB nesta placa; preferir migração para hardware diferente se essa capacidade for exigida. Usar Ethernet cabeada (Gigabit), BIOS com power-on after AC loss, refrigeração adequada para 24/7.
+- Debian 13 amd64 **já instalado** e funcionando; preservar o sistema e validar atualizações, SSH, Ethernet e recuperação. Não rodar Docker dentro de VM para o laboratório, salvo necessidade deliberada de virtualização.
 - Nobreak/UPS apropriado, alerta de falhas, sincronismo NTP e DHCP reservado.
 - Nunca abrir o Docker Socket, `127.0.0.1:8090`, PostgreSQL de laboratório ou APIs administrativas publicamente.
 

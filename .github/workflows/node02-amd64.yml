@@ -29,11 +29,13 @@ jobs:
           bash -n scripts/verify-cross-arch-bundle.sh
           bash -n scripts/preflight-new-node.sh
           bash -n scripts/v2-node02-admission.sh
+          bash -n scripts/node02-capacity-report.sh
           node --check backend/postgres_lab.js
           node --check backend/audit.js
       - name: Build MackNa controller and Gate for Linux AMD64
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          GOAMD64: v1
         run: |
           mkdir -p ../dist-amd64
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
@@ -61,6 +63,7 @@ jobs:
             scripts/preflight-new-node.sh
             scripts/verify-cross-arch-bundle.sh
             scripts/v2-node02-admission.sh
+            scripts/node02-capacity-report.sh
             docs/node02-migration-plan.md
             docs/v2-patch-security-review.md
           retention-days: 14
