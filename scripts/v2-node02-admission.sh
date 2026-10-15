@@ -29,7 +29,7 @@ for svc in mackna-agent mackna-gate mackna-deployer mackna-worker;do
 done
 if command -v docker >/dev/null;then
  if docker info >/dev/null 2>&1;then
-  names=$(docker ps -a --format '{{.Names}}') || {echo 'BLOQUEADO: falha ao inspecionar contêineres';fail=1;names='';}
+  names=$(docker ps -a --format '{{.Names}}') || { echo 'BLOQUEADO: falha ao inspecionar contêineres'; fail=1; names=''; }
   if [[ -n "$names" ]];then
    echo 'BLOQUEADO: host não está vazio; preserve os serviços existentes e revise a instalação manualmente'
    printf '%s\n' "$names" | sed -n '1,25p'
