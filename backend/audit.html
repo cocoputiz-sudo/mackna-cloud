@@ -1,0 +1,29 @@
+<!doctype html><html lang="pt-BR"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MackNa Cloud · Auditoria</title>
+<style>
+:root{font-family:system-ui;color-scheme:dark;background:#0b1220;color:#e8eef7}*{box-sizing:border-box}
+body{max-width:1120px;margin:0 auto;padding:28px 20px}
+h1{font-size:1.75rem}a{color:#94c1ff}p{color:#b7c4d5;line-height:1.5}
+.panel{border:1px solid #34445a;border-radius:13px;background:#172338;padding:18px}
+button{font:inherit;background:#2b4c6e;color:#e8eef7;border:1px solid #587799;border-radius:8px;padding:9px 13px;cursor:pointer}
+button:hover{background:#3b5c80}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;margin-top:15px;font-size:.9rem}
+th,td{text-align:left;border-bottom:1px solid #34445a;padding:11px 9px}
+th{color:#a9bdd6}td{overflow-wrap:anywhere;max-width:300px}
+.status{color:#afd1ee;margin-top:10px;min-height:22px}.error{color:#ffb3b3}
+@media(max-width:640px){body{padding:13px}.panel{padding:12px}td,th{font-size:.78rem}}
+</style>
+</head><body>
+<a href="/projects">← Projetos</a>
+<h1>Auditoria de acesso</h1>
+<p>Somente administradores. Registra eventos de acesso ao laboratório sem armazenar consultas SQL, parâmetros ou segredos.</p>
+<section class="panel">
+<button type="button" id="refresh-audit">Atualizar eventos</button>
+<div id="audit-status" role="status" class="status">Carregando...</div>
+<div class="table-wrap"><table><thead><tr><th>Data UTC</th><th>Evento</th><th>Token ID</th><th>Rota</th><th>Status</th></tr></thead>
+<tbody id="audit-events"></tbody></table></div>
+</section>
+<script src="/audit.js" defer></script>
+</body></html>
